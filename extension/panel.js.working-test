@@ -1,0 +1,22 @@
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+
+export function createTermiqPanel() {
+    const indicator = new PanelMenu.Button(0.0, 'TERMIQ', false);
+
+    const label = new St.Label({
+        text: 'TERMIQ',
+        y_align: Clutter.ActorAlign.CENTER,
+    });
+
+    indicator.add_child(label);
+
+    indicator.menu.addAction(
+        'TERMIQ is running',
+        () => Main.notify('TERMIQ', 'Panel test successful!')
+    );
+
+    return indicator;
+}
