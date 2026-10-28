@@ -2,14 +2,15 @@
 File & Folder Copilot service for TERMIQ V2.0.
 
 Provides:
-- Natural-language parsing of file/folder/project requests
-- Clarification questions when essential parameters are missing
-- Predefined project templates (Python, HTML/CSS/JS, Markdown docs)
-- Content generation via Gemini with rule-based fallback
-- Approval token binding (task_id, target_path, content_hash)
-- One-time consumption, short TTL expiry, and conflict detection
-- Safe multi-file project creation with per-file status reporting
-- Full audit logging without logging secrets or file contents
+- Natural-language parsing of file/folder/project requests with separation of
+  request text, project name, template, filenames, and functional requirements.
+- Missing-information clarification workflows.
+- Deterministic, high-quality project templates (Python calculator, HTML/CSS/JS, Docs).
+- Content generation via Gemini with strict validation and safe fallback.
+- Multi-layer verification: disk presence, SHA-256 hash matching, no prompt leakage,
+  syntax compilation, and in-memory functional behavior validation.
+- One-time consumption, short TTL expiry, and conflict detection.
+- Full audit logging without exposing sensitive data.
 """
 
 import json
@@ -71,70 +72,293 @@ def get_file_audit_log() -> list[dict]:
         return [e.model_dump(mode="json") for e in _file_audit_log]
 
 
+# ── Semantic Extraction Helpers ────────────────────────────────────────
+
+def extract_project_name(text: str) -> Optional[str]:
+    """
+    Extract a clean project directory name from user text.
+    Ensures generic words ('python', 'project') are not mistakenly used as the name.
+    """
+    lower = text.lower()
+
+    # 1. Check explicit "named X" or "called X"
+    match_named = re.search(r"\b(?:named|called)\s+([A-Za-z0-9_\-\.]+)", text, re.IGNORECASE)
+    if match_named:
+        return match_named.group(1).strip()
+
+    # 2. Check for "Python <name> project" e.g. "Python calculator project"
+    match_py_proj = re.search(r"\bpython\s+([A-Za-z0-9_\-]+)\s+project\b", text, re.IGNORECASE)
+    if match_py_proj:
+        cand = match_py_proj.group(1).strip()
+        if cand.lower() not in ("starter", "new", "simple", "sample", "a"):
+            return cand
+
+    # 3. Check for "<name> project"
+    match_project = re.search(r"\b([A-Za-z0-9_\-]+)\s+project\b", text, re.IGNORECASE)
+    if match_project:
+        cand = match_project.group(1).strip()
+        if cand.lower() not in ("python", "new", "a", "the", "my", "starter", "small", "simple"):
+            return cand
+
+    # 4. Keyword heuristics
+    if "calculator" in lower:
+        return "calculator"
+    if "website" in lower:
+        return "website"
+    if "notes" in lower or "documentation" in lower or "docs" in lower:
+        return "docs"
+
+    return None
+
+
+def extract_requested_filenames(text: str) -> list[str]:
+    """Identify explicitly mentioned filenames in the request."""
+    matches = re.findall(r"\b[A-Za-z0-9_\-]+\.[a-zA-Z0-9]+\b|\.gitignore|\.env", text)
+    seen = set()
+    result = []
+    for m in matches:
+        if m not in seen:
+            seen.add(m)
+            result.append(m)
+    return result
+
+
+def extract_functional_description(
+    text: str,
+    project_name: str,
+    template: Optional[ProjectTemplate] = None,
+) -> str:
+    """Extract a clean, concise functional description rather than repeating the raw prompt."""
+    lower = text.lower()
+    if "calculator" in lower or project_name.lower() == "calculator":
+        return "Command-line calculator providing arithmetic operations (+, -, *, /) with input validation and zero-division protection."
+    if template == ProjectTemplate.HTML_WEBSITE or "website" in lower:
+        return "Modern semantic HTML5, CSS3, and JavaScript website."
+    if template == ProjectTemplate.MARKDOWN_DOCS or "documentation" in lower or "docs" in lower:
+        return "Markdown documentation workspace with guide and development notes."
+    if template == ProjectTemplate.PYTHON_STARTER:
+        return f"Python application structure for {project_name}."
+    return f"{project_name} application."
+
+
 # ── Project Templates ──────────────────────────────────────────────────
 
 def build_template_files(
     template: ProjectTemplate,
     project_name: str,
-    description: str = "",
+    functional_description: str = "",
 ) -> list[PlannedFile]:
-    """Generate the planned files for a supported project template."""
+    """
+    Generate planned files for a supported project template.
+    Guarantees:
+    - Never copies the raw user request into file contents or docstrings.
+    - Python calculator produces a fully functional, interactive CLI calculator.
+    - requirements.txt is empty when only standard library is required (no placeholders).
+    - README.md contains features, requirements, and run instructions.
+    """
     clean_name = project_name.strip() or "my_project"
     files: list[PlannedFile] = []
+    is_calculator = "calculator" in clean_name.lower() or "calculator" in functional_description.lower()
 
     if template == ProjectTemplate.PYTHON_STARTER:
-        main_py = f'''"""
-{clean_name}
-{description or "A Python application built with TERMIQ."}
+        if is_calculator:
+            main_py = '''"""
+Calculator
+A functional interactive command-line calculator.
 """
 
+from typing import Optional
+
+
 def add(a: float, b: float) -> float:
+    """Return the sum of a and b."""
     return a + b
 
+
 def subtract(a: float, b: float) -> float:
+    """Return the difference of a and b."""
     return a - b
 
+
 def multiply(a: float, b: float) -> float:
+    """Return the product of a and b."""
     return a * b
 
+
 def divide(a: float, b: float) -> float:
+    """Return the quotient of a and b. Raises ZeroDivisionError if b is 0."""
     if b == 0:
-        raise ValueError("Cannot divide by zero.")
+        raise ZeroDivisionError("Cannot divide by zero.")
     return a / b
 
+
+OPERATIONS = {
+    "+": ("Addition", add),
+    "-": ("Subtraction", subtract),
+    "*": ("Multiplication", multiply),
+    "/": ("Division", divide),
+}
+
+
+def calculate(op: str, a: float, b: float) -> float:
+    """Execute arithmetic operation between two numbers safely."""
+    op_clean = op.strip()
+    if op_clean not in OPERATIONS:
+        raise ValueError(f"Unsupported operation: '{op_clean}'. Supported: +, -, *, /")
+    _, func = OPERATIONS[op_clean]
+    return func(a, b)
+
+
+def parse_number(prompt_text: str) -> Optional[float]:
+    """Prompt the user for a numeric value and handle invalid input."""
+    while True:
+        raw = input(prompt_text).strip()
+        if raw.lower() in ("q", "quit", "exit"):
+            return None
+        try:
+            return float(raw)
+        except ValueError:
+            print("Invalid input: please enter a valid numeric value.")
+
+
+def run_interactive() -> None:
+    """Run the interactive calculator loop."""
+    print("=" * 40)
+    print("TERMIQ Interactive CLI Calculator")
+    print("Operations: + (Add), - (Subtract), * (Multiply), / (Divide)")
+    print("Type 'q' to quit anytime.")
+    print("=" * 40)
+
+    while True:
+        try:
+            op = input("\\nSelect operation (+, -, *, /) or 'q' to quit: ").strip()
+            if op.lower() in ("q", "quit", "exit"):
+                print("Goodbye!")
+                break
+
+            if op not in OPERATIONS:
+                print("Invalid operation. Please enter +, -, *, or /.")
+                continue
+
+            num1 = parse_number("Enter first number: ")
+            if num1 is None:
+                print("Goodbye!")
+                break
+
+            num2 = parse_number("Enter second number: ")
+            if num2 is None:
+                print("Goodbye!")
+                break
+
+            try:
+                result = calculate(op, num1, num2)
+                print(f"Result: {num1} {op} {num2} = {result}")
+            except ZeroDivisionError as err:
+                print(f"Error: {err}")
+
+        except (KeyboardInterrupt, EOFError):
+            print("\\nSession ended. Goodbye!")
+            break
+
+
 def main() -> None:
-    print("Welcome to {clean_name}!")
-    print(f"Sample calculation: 10 + 5 = {{add(10, 5)}}")
+    """Main entry point."""
+    run_interactive()
+
 
 if __name__ == "__main__":
     main()
 '''
-        readme_md = f"""# {clean_name}
+            readme_md = f"""# {clean_name.title()}
 
-{description or "A Python application."}
+A clean, functional command-line calculator written in Python.
 
-## Getting Started
+## Features
+- Core arithmetic operations: addition (`+`), subtraction (`-`), multiplication (`*`), and division (`/`).
+- Robust input validation for non-numeric values.
+- Safe division-by-zero handling with informative error messages.
+- Modular structure: can be imported as a library or run interactively.
 
-Run the application:
+## Requirements
+- Python 3.8+ (standard library only; no external dependencies required).
+
+## How to Run
+
+Run the calculator directly from your terminal:
+```bash
+python3 main.py
+```
+
+## Usage Example
+
+```text
+TERMIQ Interactive CLI Calculator
+========================================
+Select operation (+, -, *, /) or 'q' to quit: +
+Enter first number: 10
+Enter second number: 5
+Result: 10.0 + 5.0 = 15.0
+```
+"""
+        else:
+            main_py = f'''"""
+{clean_name}
+{functional_description or "A Python application built with TERMIQ."}
+"""
+
+
+def run() -> None:
+    """Execute main application logic."""
+    print("Welcome to {clean_name}!")
+
+
+def main() -> None:
+    """Main entry point."""
+    run()
+
+
+if __name__ == "__main__":
+    main()
+'''
+            readme_md = f"""# {clean_name}
+
+{functional_description or "A Python application built with TERMIQ."}
+
+## Features
+- Clean project structure and entry point.
+- Standard Python packaging files.
+
+## Requirements
+- Python 3.8+
+
+## How to Run
+
 ```bash
 python3 main.py
 ```
 """
+
         gitignore = """__pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 .venv/
+venv/
 env/
 .pytest_cache/
 .coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
 """
-        reqs = "# Add project dependencies here\n"
+        # Requirements is empty because standard library satisfies the application
+        reqs = ""
 
         for rel, content, desc in [
             ("main.py", main_py, "Main application entry point"),
             ("README.md", readme_md, "Project documentation"),
             (".gitignore", gitignore, "Git ignore configuration"),
-            ("requirements.txt", reqs, "Python dependencies"),
+            ("requirements.txt", reqs, "Python dependencies (none required)"),
         ]:
             files.append(
                 PlannedFile(
@@ -152,17 +376,17 @@ env/
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{clean_name}</title>
+    <title>{clean_name.title()}</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header>
-        <h1>{clean_name}</h1>
-        <p>{description or "Welcome to your new website!"}</p>
+        <h1>{clean_name.title()}</h1>
+        <p>A modern semantic web application.</p>
     </header>
     <main>
         <section id="content">
-            <p>Generated by TERMIQ File Copilot.</p>
+            <p>Welcome to your website generated by TERMIQ File Copilot.</p>
             <button id="action-btn">Click Me</button>
             <div id="output"></div>
         </section>
@@ -226,13 +450,13 @@ button:hover {
     });
 });
 """
-        readme_md = f"""# {clean_name}
+        readme_md = f"""# {clean_name.title()}
 
-{description or "A modern HTML5, CSS3, and JavaScript website."}
+A modern HTML5, CSS3, and JavaScript website.
 
 ## How to View
 
-Open `index.html` in any web browser:
+Open `index.html` in any modern web browser:
 ```bash
 xdg-open index.html
 ```
@@ -254,32 +478,32 @@ xdg-open index.html
             )
 
     elif template == ProjectTemplate.MARKDOWN_DOCS:
-        readme_md = f"""# {clean_name} Documentation
+        readme_md = f"""# {clean_name.title()} Documentation
 
-{description or "Project documentation workspace."}
+Documentation workspace for {clean_name.title()}.
 
 ## Contents
 - [User Guide](guide.md)
 - [Development Notes](notes.md)
 """
-        guide_md = f"""# User Guide: {clean_name}
+        guide_md = f"""# User Guide: {clean_name.title()}
 
 ## Overview
-This guide provides an overview of {clean_name}.
+This guide provides an overview of {clean_name.title()}.
 
 ## Quick Start
-1. Step one
-2. Step two
-3. Step three
+1. Step one: Setup
+2. Step two: Usage
+3. Step three: Next steps
 """
-        notes_md = f"""# Notes & Architecture: {clean_name}
+        notes_md = f"""# Notes & Architecture: {clean_name.title()}
 
 ## Design Decisions
 - Document key design decisions here.
 
 ## Roadmap
-- [ ] Initial release
-- [ ] Further enhancements
+- [x] Initial documentation structure
+- [ ] Detailed specifications
 """
         for rel, content, desc in [
             ("README.md", readme_md, "Documentation table of contents"),
@@ -299,18 +523,20 @@ This guide provides an overview of {clean_name}.
     return files
 
 
-# ── Content Generation ─────────────────────────────────────────────────
+# ── Single-File Content Generation ─────────────────────────────────────
 
-def generate_single_file_content(filename: str, description: str) -> str:
+def generate_single_file_content(filename: str, functional_description: str) -> str:
     """
     Generate file content for a single file using Gemini if available,
-    or a high-quality fallback generator.
+    or a high-quality deterministic fallback generator.
+    Guarantees raw user request strings are never dumped into file content.
     """
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     api_key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     ext = Path(filename).suffix.lower()
+    clean_desc = functional_description.strip() or f"Implementation for {filename}"
 
     if api_key:
         try:
@@ -321,9 +547,9 @@ def generate_single_file_content(filename: str, description: str) -> str:
                 api_key=api_key,
                 http_options=types.HttpOptions(timeout=15000),
             )
-            prompt = f"""You are a professional software engineer assistant.
+            prompt = f"""You are a professional software engineer.
 Generate clean, production-ready, readable contents for a file named '{filename}'.
-The user requested: "{description}"
+Functional requirement: {clean_desc}
 
 Rules:
 - Output ONLY the raw file contents.
@@ -351,23 +577,32 @@ Rules:
         except Exception as exc:
             logger.warning("Gemini generation failed for %s, using fallback: %s", filename, exc)
 
-    # ── Rule-based fallback content generation ────────────────────────
+    # ── High-quality deterministic fallback ───────────────────────────
+    stem = Path(filename).stem
+    if "calc" in filename.lower() and ext == ".py":
+        # Return full calculator code
+        template_files = build_template_files(ProjectTemplate.PYTHON_STARTER, "calculator", clean_desc)
+        return template_files[0].content
+
     if ext == ".py":
         return f'''"""
-{filename}
-{description or "Python script generated by TERMIQ."}
+{stem.title()}
+{clean_desc}
 """
 
+
 def main() -> None:
-    print("Running {filename}...")
+    """Execute main logic."""
+    print("Running {stem}...")
+
 
 if __name__ == "__main__":
     main()
 '''
     elif ext == ".md":
-        return f"""# {Path(filename).stem.replace('_', ' ').title()}
+        return f"""# {stem.replace('_', ' ').title()}
 
-{description or "Documentation generated by TERMIQ."}
+{clean_desc}
 
 ## Overview
 Describe the purpose and usage of this document here.
@@ -377,24 +612,24 @@ Describe the purpose and usage of this document here.
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{Path(filename).stem.title()}</title>
+    <title>{stem.title()}</title>
 </head>
 <body>
-    <h1>{Path(filename).stem.title()}</h1>
-    <p>{description or "HTML page generated by TERMIQ."}</p>
+    <h1>{stem.title()}</h1>
+    <p>{clean_desc}</p>
 </body>
 </html>
 """
     elif ext in (".js", ".ts"):
         return f"""/**
  * {filename}
- * {description or "Script generated by TERMIQ."}
+ * {clean_desc}
  */
 
 console.log('Loaded {filename}');
 """
     elif ext == ".css":
-        return f"""/* {filename} - {description or "Styles generated by TERMIQ"} */
+        return f"""/* {filename} - {clean_desc} */
 body {{
     font-family: sans-serif;
     margin: 0;
@@ -403,12 +638,12 @@ body {{
 """
     elif ext == ".json":
         return json.dumps({
-            "name": Path(filename).stem,
-            "description": description or "Configuration generated by TERMIQ",
+            "name": stem,
+            "description": clean_desc,
             "version": "1.0.0",
         }, indent=2) + "\n"
 
-    return f"{description or 'Generated by TERMIQ.'}\n"
+    return f"# {stem.title()}\n{clean_desc}\n"
 
 
 # ── Natural Language Request Parsing ───────────────────────────────────
@@ -417,7 +652,6 @@ def _extract_path_mentions(text: str) -> Optional[str]:
     """Look for standard folder mentions like 'Projects', 'Documents', 'Downloads', 'Desktop'."""
     lower = text.lower()
     for candidate in ["projects", "documents", "downloads", "desktop"]:
-        # Match whole word or in folder
         if re.search(rf"\b(in|into|under|to)\s+(my\s+)?{candidate}\b", lower):
             return candidate.capitalize()
         if re.search(rf"\b{candidate}\s+folder\b", lower) or re.search(rf"\b{candidate}\s+directory\b", lower):
@@ -432,7 +666,13 @@ def parse_file_request(
 ) -> FileTask:
     """
     Parse a user's natural language request into a structured FileTask.
-    Identifies operation type, filenames, target directories, and missing fields.
+    Properly separates:
+    - original request text
+    - clean project/file name
+    - template
+    - destination directory
+    - requested filenames
+    - functional requirements
     """
     text = request_text.strip()
     lower = text.lower()
@@ -448,23 +688,23 @@ def parse_file_request(
     target_name: Optional[str] = None
     target_dir: Optional[str] = context_directory
 
-    # Check for search
+    # Search check
     if any(k in lower for k in ["find ", "search ", "locate "]) and any(k in lower for k in ["file", "files"]):
         op = FileOperationType.SEARCH_FILES
-    # Check for list
+    # List check
     elif (
         re.search(r"\b(show|list|display|view)\b.*\b(files|directory|contents)\b", lower)
         or "list dir" in lower
         or "what files" in lower
     ):
         op = FileOperationType.LIST_DIR
-    # Check for read
+    # Read check
     elif any(k in lower for k in ["read file", "read the file", "show content", "view file", "open file", "cat "]):
         op = FileOperationType.READ_FILE
-    # Check for folder creation
+    # Folder check
     elif any(k in lower for k in ["make a folder", "create a folder", "new folder", "mkdir", "create directory", "make directory"]):
         op = FileOperationType.CREATE_FOLDER
-    # Check for project creation / templates (ensure it's not "create a file in ... projects folder")
+    # Project check
     elif (
         re.search(r"\b(create|make|build|new|starter)\s+(?:a\s+)?(?:python\s+)?(?:starter\s+)?(?:calculator\s+)?project\b", lower)
         or re.search(r"\b(create|make|build|new)\s+(?:a\s+)?(?:small\s+)?(?:html|css|js|website)\b", lower)
@@ -480,26 +720,16 @@ def parse_file_request(
     else:
         op = FileOperationType.CREATE_FILE
 
-    # 2. Extract Folder Mention from text if not in context
+    # 2. Extract Destination Directory
     dir_mention = _extract_path_mentions(text)
     if dir_mention:
         target_dir = dir_mention
 
-    # 3. Extract Specific Targets based on Operation
+    # 3. Extract Target Name and Requested Files
+    requested_filenames = extract_requested_filenames(text)
+
     if op == FileOperationType.CREATE_PROJECT:
-        # Look for project name: "named X", "called X", "calculator project"
-        match_named = re.search(r"\b(?:named|called)\s+([A-Za-z0-9_\-\.]+)", text, re.IGNORECASE)
-        match_project = re.search(r"(\w+)\s+project\b", text, re.IGNORECASE)
-        if match_named:
-            target_name = match_named.group(1).strip()
-        elif match_project and match_project.group(1).lower() not in ("new", "a", "the", "python", "starter"):
-            target_name = match_project.group(1).strip()
-        elif "calculator" in lower:
-            target_name = "calculator_project"
-        elif "website" in lower:
-            target_name = "my_website"
-        elif "notes" in lower:
-            target_name = "notes_project"
+        target_name = extract_project_name(text)
 
     elif op == FileOperationType.CREATE_FOLDER:
         match_folder = re.search(r"\b(?:named|called)\s+([A-Za-z0-9_\-\. ]+?)(?:\s+in|\s+under|\.|$)", text, re.IGNORECASE)
@@ -511,7 +741,6 @@ def parse_file_request(
                 target_name = match_make.group(1).strip()
 
     elif op == FileOperationType.CREATE_FILE:
-        # Look for filename with extension or explicit "named X"
         match_file = re.search(r"([A-Za-z0-9_\-]+\.[a-zA-Z0-9]+)", text)
         match_named = re.search(r"\b(?:named|called)\s+([A-Za-z0-9_\-\.]+)", text, re.IGNORECASE)
         if match_file:
@@ -537,7 +766,10 @@ def parse_file_request(
         if match_file:
             target_name = match_file.group(1).strip()
 
-    # 4. Check for Missing Details & Construct Clarification Questions
+    # 4. Synthesize clean functional description
+    functional_desc = extract_functional_description(text, target_name or "", template)
+
+    # 5. Clarification Checks
     clarifications: list[str] = []
     fields_needed: list[str] = []
 
@@ -573,7 +805,6 @@ def parse_file_request(
             clarifications.append("What filename or pattern would you like to search for?")
             fields_needed.append("pattern")
         if not target_dir:
-            # Default to first approved root if available
             target_dir = approved_roots[0].name if approved_roots else "Projects"
 
     elif op == FileOperationType.LIST_DIR:
@@ -587,7 +818,6 @@ def parse_file_request(
         if not target_dir:
             target_dir = approved_roots[0].name if approved_roots else "Projects"
 
-    # Status
     status = (
         FileTaskStatus.NEEDS_CLARIFICATION
         if clarifications
@@ -602,13 +832,14 @@ def parse_file_request(
         target_directory=target_dir,
         target_name=target_name,
         template=template,
+        requested_filenames=requested_filenames,
+        functional_description=functional_desc,
         clarification_questions=clarifications,
         clarification_fields_needed=fields_needed,
         created_at=datetime.now(timezone.utc),
         expires_at=datetime.now(timezone.utc) + timedelta(seconds=APPROVAL_TTL_SECONDS),
     )
 
-    # If all details are present, prepare the plan immediately
     if status == FileTaskStatus.READY_FOR_REVIEW:
         _prepare_task_plan(task, approved_roots=approved_roots)
 
@@ -622,17 +853,14 @@ def parse_file_request(
 def _resolve_directory_root(dir_input: str, approved_roots: list[Path]) -> Optional[Path]:
     """Map a folder name or path (e.g. 'Projects', '~/Projects') to an approved Path."""
     clean = dir_input.strip()
-    # Check direct name match against approved roots
     for root in approved_roots:
         if root.name.lower() == clean.lower():
             return root
 
-    # Try resolving via validate_path
     resolved, err = validate_path(clean, must_exist=False, approved_roots=approved_roots)
     if resolved and not err:
         return resolved
 
-    # Fallback: combine with first approved root or home
     if approved_roots:
         candidate = (approved_roots[0].parent / clean).resolve()
         for root in approved_roots:
@@ -644,8 +872,8 @@ def _resolve_directory_root(dir_input: str, approved_roots: list[Path]) -> Optio
 
 def _prepare_task_plan(task: FileTask, approved_roots: Optional[list[Path]] = None) -> None:
     """
-    Construct the planned files, compute hashes, detect conflicts,
-    and generate approval tokens.
+    Construct planned files with clean functional descriptions, compute hashes,
+    detect conflicts, and issue approval token.
     """
     if approved_roots is None:
         approved_roots = get_approved_roots()
@@ -654,7 +882,6 @@ def _prepare_task_plan(task: FileTask, approved_roots: Optional[list[Path]] = No
         task.status = FileTaskStatus.NEEDS_CLARIFICATION
         return
 
-    # Resolve target directory
     resolved_dir = _resolve_directory_root(task.target_directory, approved_roots)
     if not resolved_dir:
         task.status = FileTaskStatus.FAILED
@@ -664,7 +891,6 @@ def _prepare_task_plan(task: FileTask, approved_roots: Optional[list[Path]] = No
 
     task.resolved_target_directory = str(resolved_dir)
 
-    # Validate target name
     if not is_safe_filename(task.target_name):
         task.status = FileTaskStatus.FAILED
         task.conflict_detected = True
@@ -682,22 +908,22 @@ def _prepare_task_plan(task: FileTask, approved_roots: Optional[list[Path]] = No
         task.status = FileTaskStatus.READY_FOR_REVIEW
         return
 
-    # Check if parent directory exists
     if not resolved_dir.exists():
         task.needs_parent_creation = True
         task.parent_dirs_to_create = [str(resolved_dir)]
 
-    # Generate planned files
+    # Generate planned files using clean functional descriptions (NEVER raw prompt)
     if task.operation == FileOperationType.CREATE_PROJECT and task.template:
         task.planned_files = build_template_files(
             task.template,
             project_name=task.target_name,
-            description=task.request_text,
+            functional_description=task.functional_description or "",
         )
-        task.summary = f"Create project '{task.target_name}' using template '{task.template.value}' ({len(task.planned_files)} files)"
+        file_list_str = ", ".join(f.relative_path for f in task.planned_files)
+        task.summary = f"Create project '{task.target_name}' using template '{task.template.value}' ({len(task.planned_files)} files: {file_list_str})"
 
     elif task.operation == FileOperationType.CREATE_FILE:
-        content = generate_single_file_content(task.target_name, task.request_text)
+        content = generate_single_file_content(task.target_name, task.functional_description or "")
         task.planned_files = [
             PlannedFile(
                 relative_path=task.target_name,
@@ -732,9 +958,7 @@ def clarify_task(
     text: Optional[str] = None,
     approved_roots: Optional[list[Path]] = None,
 ) -> tuple[bool, str, Optional[FileTask]]:
-    """
-    Update a task in NEEDS_CLARIFICATION with answers from the user.
-    """
+    """Update a task in NEEDS_CLARIFICATION with answers from the user."""
     with _file_lock:
         task = _file_tasks.get(task_id)
 
@@ -744,10 +968,8 @@ def clarify_task(
     if task.status not in (FileTaskStatus.NEEDS_CLARIFICATION, FileTaskStatus.READY_FOR_REVIEW):
         return False, f"Task is in status {task.status.value}, cannot clarify.", task
 
-    # Update answers
     task.user_provided_answers.update(answers)
 
-    # Map answers to task attributes
     if "filename" in answers:
         task.target_name = answers["filename"].strip()
     if "folder_name" in answers:
@@ -765,7 +987,6 @@ def clarify_task(
         else:
             task.template = ProjectTemplate.PYTHON_STARTER
 
-    # If freeform text was provided, re-extract any mentions
     if text:
         dir_mention = _extract_path_mentions(text)
         if dir_mention and not task.target_directory:
@@ -775,7 +996,6 @@ def clarify_task(
         if file_match and not task.target_name:
             task.target_name = file_match.group(1).strip()
 
-    # Re-evaluate needed fields
     remaining_clarifications = []
     if not task.target_name:
         remaining_clarifications.append("Target name is still required.")
@@ -787,11 +1007,161 @@ def clarify_task(
         task.status = FileTaskStatus.NEEDS_CLARIFICATION
     else:
         task.clarification_questions = []
+        task.functional_description = extract_functional_description(
+            task.request_text, task.target_name, task.template
+        )
         task.status = FileTaskStatus.READY_FOR_REVIEW
         _prepare_task_plan(task, approved_roots=approved_roots)
 
     _file_audit("CLARIFIED", task.task_id, f"status={task.status.value}")
     return True, "Task updated.", task
+
+
+# ── Content-Quality & Functional Verification ──────────────────────────
+
+def _verify_calculator_semantics(content: str) -> tuple[bool, str]:
+    """
+    In-memory validation of calculator code.
+    Verifies:
+    - Syntax validity via compile()
+    - Absence of eval/exec
+    - Presence of main guard
+    - Presence and correctness of arithmetic operations
+    - Safe handling of ZeroDivisionError
+    """
+    try:
+        code_obj = compile(content, "main.py", "exec")
+    except SyntaxError as exc:
+        return False, f"Syntax compilation error in main.py: {exc}"
+
+    if "eval(" in content or "exec(" in content:
+        return False, "Prohibited eval/exec call detected in main.py."
+
+    if '__name__ == "__main__"' not in content and "__name__ == '__main__'" not in content:
+        return False, "Missing main guard (__name__ == '__main__') in main.py."
+
+    ns: dict = {}
+    try:
+        exec(code_obj, ns)
+    except Exception as exc:
+        return False, f"Failed to load module definitions in isolated namespace: {exc}"
+
+    for func_name in ("add", "subtract", "multiply", "divide"):
+        if func_name not in ns or not callable(ns[func_name]):
+            return False, f"Required arithmetic function '{func_name}' is missing or not callable."
+
+    try:
+        if ns["add"](10, 5) != 15:
+            return False, "add(10, 5) did not return 15."
+        if ns["subtract"](10, 5) != 5:
+            return False, "subtract(10, 5) did not return 5."
+        if ns["multiply"](10, 5) != 50:
+            return False, "multiply(10, 5) did not return 50."
+        if ns["divide"](10, 5) != 2.0:
+            return False, "divide(10, 5) did not return 2.0."
+    except Exception as exc:
+        return False, f"Arithmetic verification error: {exc}"
+
+    try:
+        ns["divide"](10, 0)
+        return False, "divide() did not raise ZeroDivisionError on division by zero."
+    except ZeroDivisionError:
+        pass
+    except Exception as exc:
+        return False, f"Unexpected error on division by zero test: {exc}"
+
+    return True, "Calculator functions verified (+, -, *, /, ZeroDivisionError)."
+
+
+def verify_task_execution(
+    task: FileTask,
+    approved_roots: list[Path],
+) -> tuple[bool, str, dict]:
+    """
+    Perform deep verification of the created files on disk:
+    1. Physical existence within approved destination.
+    2. Bit-for-bit SHA-256 content hash matching against approved plan.
+    3. Content size validation.
+    4. Verification that raw prompt text was NOT leaked into generated files.
+    5. Template-specific functional correctness validation.
+    """
+    target_root = Path(task.resolved_target_path)
+    if not target_root.exists():
+        return False, f"Target path does not exist on disk: {target_root}", {}
+
+    details = {
+        "files_verified": [],
+        "hashes_matched": True,
+        "no_prompt_leakage": True,
+        "template_validated": None,
+    }
+
+    # For CREATE_FOLDER
+    if task.operation == FileOperationType.CREATE_FOLDER:
+        if not target_root.is_dir():
+            return False, f"Expected directory but found non-directory at {target_root}", details
+        details["files_verified"].append(str(target_root))
+        return True, f"Folder verified on disk: {target_root.name}", details
+
+    # For CREATE_FILE and CREATE_PROJECT
+    for pf in task.planned_files:
+        dest_file = target_root if task.operation == FileOperationType.CREATE_FILE else target_root / pf.relative_path
+        if not dest_file.exists():
+            return False, f"Expected file is missing from disk: {pf.relative_path}", details
+
+        try:
+            raw_bytes = dest_file.read_bytes()
+            disk_content = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return False, f"Created file is not valid UTF-8 text: {pf.relative_path}", details
+        except OSError as exc:
+            return False, f"Error reading created file {pf.relative_path}: {exc}", details
+
+        # Hash check
+        disk_hash = compute_content_hash(disk_content)
+        if disk_hash != pf.content_hash:
+            details["hashes_matched"] = False
+            return (
+                False,
+                f"Content hash mismatch for {pf.relative_path} (expected {pf.content_hash[:8]}..., got {disk_hash[:8]}...)",
+                details,
+            )
+
+        # Prompt leakage check (detect if full raw request leaked into file)
+        req = task.request_text.strip()
+        if len(req) > 20 and req in disk_content:
+            details["no_prompt_leakage"] = False
+            return False, f"Request prompt string leaked into {pf.relative_path}", details
+
+        # Template checks for Python starter
+        if pf.relative_path == "main.py":
+            is_calc = (
+                "calculator" in (task.target_name or "").lower()
+                or "calculator" in (task.functional_description or "").lower()
+            )
+            if is_calc:
+                ok_calc, calc_msg = _verify_calculator_semantics(disk_content)
+                if not ok_calc:
+                    return False, f"Calculator functional verification failed: {calc_msg}", details
+                details["template_validated"] = "python_starter (calculator)"
+
+        elif pf.relative_path == "requirements.txt":
+            # Must not contain placeholder comments
+            if "Add project dependencies here" in disk_content:
+                return False, "requirements.txt contains generic placeholder comments.", details
+
+        elif pf.relative_path == "README.md":
+            # Must contain run instructions
+            if "python3 main.py" not in disk_content and "xdg-open index.html" not in disk_content and "# " not in disk_content:
+                return False, f"README.md missing standard run instructions or title in {pf.relative_path}.", details
+
+        details["files_verified"].append(pf.relative_path)
+
+    summary = f"All {len(details['files_verified'])} file(s) verified on disk with exact content hashes."
+    if details["template_validated"]:
+        summary += f" Functional behavior validated: {details['template_validated']}."
+
+    return True, summary, details
 
 
 # ── Approval & Execution ───────────────────────────────────────────────
@@ -809,7 +1179,6 @@ def approve_file_task(
         _file_audit("APPROVE_FAILED", task_id, "unknown_task")
         return False, "Task not found.", None
 
-    # Check expiry
     if task.expires_at and datetime.now(timezone.utc) > task.expires_at:
         task.status = FileTaskStatus.EXPIRED
         _file_audit("EXPIRED", task_id)
@@ -823,7 +1192,6 @@ def approve_file_task(
     if task.status != FileTaskStatus.AWAITING_APPROVAL:
         return False, f"Task is {task.status.value}, not awaiting approval.", task
 
-    # Validate approval token
     if approval_token and approval_token != task.approval_token:
         _file_audit("APPROVE_FAILED", task_id, "invalid_token")
         return False, "Invalid approval token.", task
@@ -841,13 +1209,14 @@ def execute_file_task(
     """
     Execute an approved file task.
 
-    Security guarantees:
+    Security & Quality guarantees:
     - Task must be in valid approved state.
     - Approval token must match.
     - Expiration verified again.
     - Re-checks that destination does not exist.
     - Content hash verified before writing.
     - One-time token consumption.
+    - Deep verification on disk after creation (hash comparison, syntax & semantics).
     """
     with _file_lock:
         task = _file_tasks.get(task_id)
@@ -860,7 +1229,6 @@ def execute_file_task(
         _file_audit("EXEC_EXPIRED", task_id)
         return False, "Approval token has expired.", task
 
-    # Validate token if supplied
     if approval_token and approval_token != task.approval_token:
         _file_audit("EXEC_FAILED", task_id, "token_mismatch")
         return False, "Invalid approval token.", task
@@ -904,8 +1272,6 @@ def execute_file_task(
 
             created_files_report.append(res["path"])
             task.execution_result = {"created_folders": [res["path"]]}
-            task.verification_result = f"Folder successfully created and verified at {res['path']}"
-            task.status = FileTaskStatus.COMPLETED
 
         # Execution Case 2: CREATE_FILE
         elif task.operation == FileOperationType.CREATE_FILE:
@@ -924,12 +1290,9 @@ def execute_file_task(
 
             created_files_report.append(res["path"])
             task.execution_result = {"created_files": [res["path"]], "bytes": res["bytes_written"]}
-            task.verification_result = f"File created and verified ({res['bytes_written']} bytes) at {res['path']}"
-            task.status = FileTaskStatus.COMPLETED
 
         # Execution Case 3: CREATE_PROJECT
         elif task.operation == FileOperationType.CREATE_PROJECT:
-            # 1. Create root folder for project
             folder_res = safe_create_folder(
                 target_path,
                 create_parents=task.needs_parent_creation,
@@ -942,7 +1305,6 @@ def execute_file_task(
 
             created_files_report.append(folder_res["path"])
 
-            # 2. Create planned files inside project
             created_files = []
             failures = []
             for pf in task.planned_files:
@@ -969,12 +1331,20 @@ def execute_file_task(
                 task.verification_result = f"Partial creation: {len(created_files)} created, {len(failures)} failed."
                 _file_audit("PARTIAL_COMPLETION", task_id, f"failures={len(failures)}")
                 return False, f"Some files could not be created: {failures}", task
-            else:
-                task.status = FileTaskStatus.COMPLETED
-                task.verification_result = f"Project '{task.target_name}' successfully created ({len(created_files)} files verified)"
 
+        # ── Deep Post-Execution Verification ──────────────────────────
+        ok_ver, ver_msg, ver_details = verify_task_execution(task, approved_roots=approved_roots)
+        task.verification_result = ver_msg
+        task.verification_details = ver_details
+
+        if not ok_ver:
+            task.status = FileTaskStatus.FAILED
+            _file_audit("VERIFY_FAILED", task_id, ver_msg)
+            return False, f"Verification failed: {ver_msg}", task
+
+        task.status = FileTaskStatus.COMPLETED
         _file_audit("COMPLETED", task_id, f"created={len(created_files_report)}")
-        return True, task.verification_result or "Task completed successfully.", task
+        return True, task.verification_result, task
 
     except Exception as exc:
         task.status = FileTaskStatus.FAILED

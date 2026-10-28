@@ -537,3 +537,151 @@ class TestFileAPIEndpoints:
         assert resp.status_code == 200
         assert "entries" in resp.json()
 
+
+# ══════════════════════════════════════════════════════════════════════
+# 9. Regression Test Suite: Python Calculator Project Fix
+# ══════════════════════════════════════════════════════════════════════
+
+class TestCalculatorProjectRegression:
+    PROMPT = (
+        "Create a Python calculator project in my Projects folder. "
+        "Include main.py, README.md, .gitignore, and requirements.txt. "
+        "Show me the destination and preview every file before creating anything."
+    )
+
+    def test_exact_prompt_parsing_and_separation(self, test_roots):
+        task = file_copilot.parse_file_request(self.PROMPT, approved_roots=test_roots)
+
+        # 1. Verification of structural concept separation
+        assert task.operation == FileOperationType.CREATE_PROJECT
+        assert task.target_name == "calculator"
+        assert task.template == ProjectTemplate.PYTHON_STARTER
+        assert task.target_directory == "Projects"
+        assert task.requested_filenames == ["main.py", "README.md", ".gitignore", "requirements.txt"]
+        assert task.functional_description is not None
+        assert task.functional_description != self.PROMPT
+
+        # 2. Destination preview is available
+        assert task.target_path is not None
+        assert task.target_path.endswith("calculator")
+        assert "Projects/calculator" in task.target_path
+
+        # 3. File preview contains exactly the requested files
+        planned_map = {pf.relative_path: pf for pf in task.planned_files}
+        assert set(planned_map.keys()) == {"main.py", "README.md", ".gitignore", "requirements.txt"}
+
+        # 4. Zero prompt leakage into any planned file
+        for rel_path, pf in planned_map.items():
+            assert self.PROMPT not in pf.content, f"Prompt text leaked into planned file {rel_path}"
+
+    def test_calculator_main_py_semantics(self, test_roots):
+        task = file_copilot.parse_file_request(self.PROMPT, approved_roots=test_roots)
+        planned_map = {pf.relative_path: pf for pf in task.planned_files}
+        main_content = planned_map["main.py"].content
+
+        # No prohibited execution
+        assert "eval(" not in main_content
+        assert "exec(" not in main_content
+        assert "__name__ == '__main__'" in main_content or '__name__ == "__main__"' in main_content
+
+        # Interactive functions and error handling present
+        assert "def add" in main_content
+        assert "def subtract" in main_content
+        assert "def multiply" in main_content
+        assert "def divide" in main_content
+        assert "ZeroDivisionError" in main_content
+        assert "def run_interactive" in main_content or "def main" in main_content
+
+        # Syntax validity via compile
+        code_obj = compile(main_content, "main.py", "exec")
+        assert code_obj is not None
+
+        # Functional correctness via in-memory execution
+        ns = {}
+        exec(code_obj, ns)
+        assert ns["add"](10, 5) == 15
+        assert ns["subtract"](10, 5) == 5
+        assert ns["multiply"](10, 5) == 50
+        assert ns["divide"](10, 5) == 2.0
+        with pytest.raises(ZeroDivisionError):
+            ns["divide"](10, 0)
+
+    def test_calculator_ancillary_files(self, test_roots):
+        task = file_copilot.parse_file_request(self.PROMPT, approved_roots=test_roots)
+        planned_map = {pf.relative_path: pf for pf in task.planned_files}
+
+        # README.md
+        readme = planned_map["README.md"].content
+        assert self.PROMPT not in readme
+        assert "# Calculator" in readme
+        assert "## Features" in readme
+        assert "## Requirements" in readme
+        assert "## How to Run" in readme
+        assert "python3 main.py" in readme
+        assert "## Usage Example" in readme
+
+        # .gitignore
+        gitignore = planned_map[".gitignore"].content
+        assert "__pycache__/" in gitignore
+        assert ".venv/" in gitignore
+
+        # requirements.txt
+        reqs = planned_map["requirements.txt"].content
+        assert reqs == ""  # Zero dummy/placeholder comments
+        assert "# Add project dependencies here" not in reqs
+
+    def test_full_approval_execution_and_deep_verification(self, test_roots):
+        task = file_copilot.parse_file_request(self.PROMPT, approved_roots=test_roots)
+        assert task.status == FileTaskStatus.AWAITING_APPROVAL
+        token = task.approval_token
+        assert token is not None
+
+        # Approve task
+        ok_app, _, task_app = file_copilot.approve_file_task(task.task_id, approved=True, approval_token=token)
+        assert ok_app is True
+
+        # Execute task
+        ok_exec, msg_exec, task_exec = file_copilot.execute_file_task(
+            task.task_id,
+            approval_token=token,
+            approved_roots=test_roots,
+        )
+        assert ok_exec is True
+        assert task_exec.status == FileTaskStatus.COMPLETED
+
+        # Verify disk artifacts
+        proj_dir = test_roots[0] / "calculator"
+        assert proj_dir.is_dir()
+        assert (proj_dir / "main.py").exists()
+        assert (proj_dir / "README.md").exists()
+        assert (proj_dir / ".gitignore").exists()
+        assert (proj_dir / "requirements.txt").exists()
+
+        # Check deep verification metadata
+        assert task_exec.verification_details is not None
+        assert task_exec.verification_details["hashes_matched"] is True
+        assert task_exec.verification_details["no_prompt_leakage"] is True
+        assert task_exec.verification_details["template_validated"] == "python_starter (calculator)"
+        assert len(task_exec.verification_details["files_verified"]) == 4
+
+        # Verify disk file content matches planned files
+        for pf in task.planned_files:
+            disk_content = (proj_dir / pf.relative_path).read_text(encoding="utf-8")
+            assert disk_content == pf.content
+            assert self.PROMPT not in disk_content
+
+    def test_repeat_request_triggers_conflict_prevention(self, test_roots):
+        # First execution succeeds
+        task1 = file_copilot.parse_file_request(self.PROMPT, approved_roots=test_roots)
+        file_copilot.approve_file_task(task1.task_id, approved=True, approval_token=task1.approval_token)
+        ok1, _, _ = file_copilot.execute_file_task(task1.task_id, approval_token=task1.approval_token, approved_roots=test_roots)
+        assert ok1 is True
+
+        # Second request attempts to create existing directory
+        task2 = file_copilot.parse_file_request(self.PROMPT, approved_roots=test_roots)
+        assert task2.conflict_detected is True
+        assert "Target already exists" in task2.conflict_message
+        assert task2.status == FileTaskStatus.READY_FOR_REVIEW
+        assert task2.approval_token is None  # Blocked from approval
+
+

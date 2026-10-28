@@ -63,6 +63,7 @@ class TroubleshootingPlan(BaseModel):
     expires_at: Optional[datetime] = None
     execution_result: Optional[dict] = None
     verification_result: Optional[str] = None
+    verification_details: Optional[dict] = None
 
 
 class ApproveRequest(BaseModel):
@@ -156,6 +157,8 @@ class FileTask(BaseModel):
 
     # Optional template
     template: Optional[ProjectTemplate] = None
+    requested_filenames: list[str] = Field(default_factory=list)
+    functional_description: Optional[str] = None
 
     # Clarification questions when important details are missing
     clarification_questions: list[str] = Field(default_factory=list)
@@ -184,6 +187,7 @@ class FileTask(BaseModel):
     # Results
     execution_result: Optional[dict] = None
     verification_result: Optional[str] = None
+    verification_details: Optional[dict] = None
 
 
 class CreateFileTaskRequest(BaseModel):
