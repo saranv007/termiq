@@ -1,33 +1,77 @@
+"""
+TERMIQ AI assistant with Gemini integration and troubleshooting plans.
+
+Preserves the rule-based fallback and adds structured diagnosis
+with plan proposals for the approval-based execution engine.
+"""
 
 import json
 import logging
 import os
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from app.models import (
+    ActionType,
+    AskResponse,
+    PlanStatus,
+    ProposedAction,
+    RiskLevel,
+    TroubleshootingPlan,
+)
 from app.services.diagnostics import collect_diagnostics
+from app.services.executor import store_plan
 from app.services.process_monitor import get_top_processes
 from app.services.service_monitor import get_failed_services
-
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 logger = logging.getLogger(__name__)
 
+# Map of action keywords the AI may suggest to validated ActionType values.
+_ACTION_KEYWORD_MAP: dict[str, ActionType] = {
+    "check_uptime": ActionType.CHECK_UPTIME,
+    "uptime": ActionType.CHECK_UPTIME,
+    "check_memory": ActionType.CHECK_MEMORY,
+    "memory": ActionType.CHECK_MEMORY,
+    "free": ActionType.CHECK_MEMORY,
+    "check_disk": ActionType.CHECK_DISK,
+    "disk": ActionType.CHECK_DISK,
+    "df": ActionType.CHECK_DISK,
+    "check_processes": ActionType.CHECK_PROCESSES,
+    "processes": ActionType.CHECK_PROCESSES,
+    "ps": ActionType.CHECK_PROCESSES,
+    "check_failed_services": ActionType.CHECK_FAILED_SERVICES,
+    "failed_services": ActionType.CHECK_FAILED_SERVICES,
+    "systemctl": ActionType.CHECK_FAILED_SERVICES,
+    "check_journal_errors": ActionType.CHECK_JOURNAL_ERRORS,
+    "journal": ActionType.CHECK_JOURNAL_ERRORS,
+    "journalctl": ActionType.CHECK_JOURNAL_ERRORS,
+    "check_network": ActionType.CHECK_NETWORK,
+    "network": ActionType.CHECK_NETWORK,
+    "ss": ActionType.CHECK_NETWORK,
+    "check_temperature": ActionType.CHECK_TEMPERATURE,
+    "temperature": ActionType.CHECK_TEMPERATURE,
+    "sensors": ActionType.CHECK_TEMPERATURE,
+}
+
 
 def _rule_based_answer(
-    question,
-    diagnostics,
-    process_report,
-    services,
-):
+    question: str,
+    diagnostics: dict,
+    process_report: dict,
+    services: dict,
+) -> tuple[str, list[str]]:
     """Keep the existing diagnostic answers as a fallback."""
 
     q = question.lower()
-    recommendations = []
+    recommendations: list[str] = []
 
     memory_processes = process_report["by_memory"]
     cpu_processes = process_report["by_cpu"]
@@ -149,7 +193,7 @@ def _rule_based_answer(
     return answer, recommendations
 
 
-def _compact_processes(processes):
+def _compact_processes(processes: list[dict]) -> list[dict]:
     """Share only selected process metrics with the AI."""
 
     return [
@@ -162,12 +206,55 @@ def _compact_processes(processes):
     ]
 
 
+# ── AI-suggested action extraction ────────────────────────────────────
+
+def _parse_suggested_action(ai_text: str) -> Optional[ActionType]:
+    """
+    Attempt to extract a suggested diagnostic action from the AI response.
+
+    The prompt asks Gemini to include a line like:
+        Suggested action: check_memory
+
+    We validate the suggestion against our known action types.
+    The AI cannot invent new action types.
+    """
+    match = re.search(
+        r"suggested\s+action:\s*(\S+)",
+        ai_text,
+        re.IGNORECASE,
+    )
+    if match:
+        raw = match.group(1).strip().lower().rstrip(".")
+        action_type = _ACTION_KEYWORD_MAP.get(raw)
+        if action_type and action_type != ActionType.MANUAL_STEP:
+            return action_type
+
+    return None
+
+
+def _clean_ai_text(text: str) -> str:
+    """Remove the suggested-action metadata line from user-visible text."""
+    cleaned = re.sub(
+        r"\n?suggested\s+action:\s*\S+[^\n]*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip()
+
+
 def _generate_ai_answer(
-    question,
-    diagnostics,
-    process_report,
-    services,
-):
+    question: str,
+    diagnostics: dict,
+    process_report: dict,
+    services: dict,
+) -> tuple[str, Optional[ActionType]]:
+    """
+    Call Gemini and return (answer_text, optional_suggested_action).
+
+    The prompt asks the model to optionally suggest a diagnostic action
+    from a fixed list.  We parse and validate the suggestion server-side.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
@@ -184,7 +271,6 @@ def _generate_ai_answer(
         if service.get("sub") == "failed"
     ]
 
-    # Send a limited system snapshot rather than the full process report.
     snapshot = {
         "cpu_percent": diagnostics.get("cpu_percent"),
         "memory_percent": diagnostics.get("memory_percent"),
@@ -199,7 +285,11 @@ def _generate_ai_answer(
         "findings": diagnostics.get("findings", [])[:8],
     }
 
-    prompt = f"""
+    allowed_actions = ", ".join(
+        at.value for at in ActionType if at != ActionType.MANUAL_STEP
+    )
+
+    prompt = f"""\
 You are TERMIQ, an AI copilot for Ubuntu Linux.
 
 Answer the user's question in clear, beginner-friendly language.
@@ -209,28 +299,32 @@ Rules:
 - Distinguish measured facts from possible causes.
 - Never invent system metrics, processes, or service failures.
 - Do not claim that you executed commands or changed the system.
-- Explain proposed terminal commands before suggesting them.
-- Never execute commands or recommend automatic destructive changes.
 - If evidence is insufficient, clearly say so.
-- Use plain text only. Do not use Markdown headings, **bold markers**,
-  hashtags, tables, or code fences.
+- Use plain text only. Do not use Markdown headings (###), **bold**, \
+bullet points with *, tables, or code fences.
 - Keep answers under 120 words whenever practical.
-- Prefer this structure when useful:
+- Structure your answer with these labels on separate lines when useful:
   Summary:
+  Evidence:
   Possible causes:
   Recommended next step:
 - Give practical advice suitable for a beginner using Ubuntu.
+
+If a deeper diagnostic would help, add exactly one line at the very end:
+  Suggested action: <action_type>
+where <action_type> is one of: {allowed_actions}
+Only suggest an action if it would provide additional useful evidence. \
+Do not suggest an action for simple informational questions.
 
 CURRENT SYSTEM SNAPSHOT:
 {json.dumps(snapshot, ensure_ascii=False, default=str)}
 
 USER QUESTION:
-{question}
-"""
+{question}"""
 
     client = genai.Client(
         api_key=api_key,
-        http_options=types.HttpOptions(timeout=60000),
+        http_options=types.HttpOptions(timeout=30000),
     )
 
     try:
@@ -239,23 +333,91 @@ USER QUESTION:
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.2,
-                max_output_tokens=600,
+                max_output_tokens=500,
             ),
         )
 
-        answer = (response.text or "").strip()
+        raw_answer = (response.text or "").strip()
 
-        if not answer:
+        if not raw_answer:
             raise RuntimeError("Gemini returned an empty response.")
 
-        return answer
+        suggested = _parse_suggested_action(raw_answer)
+        clean_answer = _clean_ai_text(raw_answer)
+
+        return clean_answer, suggested
 
     finally:
         client.close()
 
 
+# ── Plan construction ─────────────────────────────────────────────────
+
+_ACTION_DESCRIPTIONS: dict[ActionType, str] = {
+    ActionType.CHECK_UPTIME: "Check system uptime and load averages",
+    ActionType.CHECK_MEMORY: "Show detailed memory usage (free -h)",
+    ActionType.CHECK_DISK: "Show disk space usage (df -h /)",
+    ActionType.CHECK_PROCESSES: "List running processes sorted by CPU usage",
+    ActionType.CHECK_FAILED_SERVICES: "List failed systemd services",
+    ActionType.CHECK_JOURNAL_ERRORS: "Show recent error-level journal entries",
+    ActionType.CHECK_NETWORK: "Show listening network sockets",
+    ActionType.CHECK_TEMPERATURE: "Read hardware temperature sensors",
+}
+
+
+def _build_plan(
+    question: str,
+    answer: str,
+    diagnostics: dict,
+    suggested_action: Optional[ActionType],
+) -> Optional[TroubleshootingPlan]:
+    """
+    Build a troubleshooting plan when the AI suggests a diagnostic action.
+
+    Returns None if no action was suggested.
+    """
+    if suggested_action is None:
+        return None
+
+    evidence = []
+    if diagnostics.get("findings"):
+        evidence = [
+            {"type": "diagnostic_finding", **f}
+            for f in diagnostics["findings"]
+        ]
+
+    plan = TroubleshootingPlan(
+        question=question,
+        diagnosis_summary=answer[:300],
+        evidence=evidence,
+        possible_causes=[],
+        proposed_action=ProposedAction(
+            action_type=suggested_action,
+            description=_ACTION_DESCRIPTIONS.get(
+                suggested_action,
+                f"Run diagnostic: {suggested_action.value}",
+            ),
+            risk_level=RiskLevel.SAFE,
+            requires_approval=True,
+        ),
+        status=PlanStatus.PROPOSED,
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=300),
+    )
+
+    store_plan(plan)
+    return plan
+
+
+# ── Main entry point ──────────────────────────────────────────────────
+
 def answer_question(question: str) -> dict:
-    # Collect live Linux information using the existing services.
+    """
+    Answer a user question with live diagnostics, AI analysis, and
+    an optional troubleshooting plan.
+
+    Returns a dict matching the AskResponse schema.
+    All existing fields are preserved for backward compatibility.
+    """
     diagnostics = collect_diagnostics()
     process_report = get_top_processes(limit=5)
     services = get_failed_services()
@@ -272,14 +434,16 @@ def answer_question(question: str) -> dict:
 
     ai_enabled = False
     source = "live_system_diagnostics"
+    suggested_action: Optional[ActionType] = None
 
     try:
-        answer = _generate_ai_answer(
+        ai_answer, suggested_action = _generate_ai_answer(
             question,
             diagnostics,
             process_report,
             services,
         )
+        answer = ai_answer
         ai_enabled = True
         source = "gemini_live_system_diagnostics"
 
@@ -292,14 +456,20 @@ def answer_question(question: str) -> dict:
             "the displayed answer uses the local diagnostic fallback."
         )
 
-    return {
-        "question": question,
-        "answer": answer,
-        "source": source,
-        "diagnostics": diagnostics,
-        "top_processes": process_report,
-        "failed_services": services,
-        "findings": findings,
-        "recommendations": recommendations,
-        "ai_enabled": ai_enabled,
-    }
+    # Build a troubleshooting plan if the AI suggested a diagnostic.
+    plan = _build_plan(question, answer, diagnostics, suggested_action)
+
+    response = AskResponse(
+        question=question,
+        answer=answer,
+        source=source,
+        diagnostics=diagnostics,
+        top_processes=process_report,
+        failed_services=services,
+        findings=findings,
+        recommendations=recommendations,
+        ai_enabled=ai_enabled,
+        plan=plan,
+    )
+
+    return response.model_dump(mode="json")

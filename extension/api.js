@@ -1,4 +1,3 @@
-
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
 
@@ -46,4 +45,28 @@ export function getSystemSummary() {
 
 export function askTermiq(question) {
     return request('/api/v1/assistant/ask', 'POST', {question});
+}
+
+export function approvePlanAction(planId, actionId, approved) {
+    return request('/api/v1/assistant/approve', 'POST', {
+        plan_id: planId,
+        action_id: actionId,
+        approved,
+    });
+}
+
+export function executePlanAction(planId, actionId) {
+    return request('/api/v1/assistant/execute', 'POST', {
+        plan_id: planId,
+        action_id: actionId,
+        approved: true,
+    });
+}
+
+export function verifyPlanAction(planId) {
+    return request(`/api/v1/assistant/verify/${planId}`);
+}
+
+export function getPlan(planId) {
+    return request(`/api/v1/assistant/plan/${planId}`);
 }

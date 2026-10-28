@@ -1,0 +1,51 @@
+
+.termiq-popup {
+    min-width: 340px;
+    spacing: 12px;
+    padding: 16px;
+    background-color: #111318;
+    color: #f4f4f5;
+}
+
+.termiq-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.termiq-status {
+    font-size: 12px;
+    color: #a1a1aa;
+}
+
+.termiq-stats {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #20232b;
+    color: #8bdbb5;
+    font-size: 12px;
+}
+
+.termiq-input {
+    min-height: 40px;
+    padding: 8px;
+    border-radius: 8px;
+    background-color: #20232b;
+    color: #ffffff;
+}
+
+.termiq-button {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #6366f1;
+    color: #ffffff;
+    font-weight: bold;
+}
+
+.termiq-answer {
+    min-height: 45px;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #20232b;
+    color: #e4e4e7;
+}
