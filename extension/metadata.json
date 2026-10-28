@@ -1,8 +1,7 @@
-
 {
   "uuid": "termiq@local",
   "name": "TERMIQ",
-  "description": "AI-powered Linux system assistant",
-  "version": 1,
+  "description": "AI-powered Linux copilot & File Copilot",
+  "version": 2,
   "shell-version": ["50"]
 }

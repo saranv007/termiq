@@ -1,4 +1,4 @@
-"""Pydantic models for TERMIQ's diagnosis, planning, and execution pipeline."""
+"""Pydantic models for TERMIQ's diagnosis, planning, execution, and file copilot pipeline."""
 
 import enum
 from datetime import datetime, timezone
@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+
+# ── Existing Diagnostic & System Models ───────────────────────────────
 
 class ActionType(str, enum.Enum):
     """Supported action categories. Only read-only diagnostics in v1."""
@@ -96,3 +98,107 @@ class AuditEntry(BaseModel):
     plan_id: str = ""
     action_id: str = ""
     detail: str = ""
+
+
+# ── File & Folder Copilot Models (V2.0) ────────────────────────────────
+
+class FileOperationType(str, enum.Enum):
+    """Supported file operations in V2.0."""
+    CREATE_FILE = "create_file"
+    CREATE_FOLDER = "create_folder"
+    CREATE_PROJECT = "create_project"
+    LIST_DIR = "list_dir"
+    SEARCH_FILES = "search_files"
+    READ_FILE = "read_file"
+
+
+class FileTaskStatus(str, enum.Enum):
+    """Lifecycle states for a file task."""
+    NEEDS_CLARIFICATION = "needs_clarification"
+    READY_FOR_REVIEW = "ready_for_review"
+    AWAITING_APPROVAL = "awaiting_approval"
+    REJECTED = "rejected"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class ProjectTemplate(str, enum.Enum):
+    """Predefined project templates."""
+    PYTHON_STARTER = "python_starter"
+    HTML_WEBSITE = "html_website"
+    MARKDOWN_DOCS = "markdown_docs"
+
+
+class PlannedFile(BaseModel):
+    """A file planned for creation as part of a task."""
+    relative_path: str
+    content: str
+    content_hash: str
+    size_bytes: int
+    description: str = ""
+
+
+class FileTask(BaseModel):
+    """Structured file operation task with clarification and approval state."""
+    task_id: str = Field(default_factory=lambda: uuid4().hex[:16])
+    request_text: str
+    operation: FileOperationType
+    status: FileTaskStatus = FileTaskStatus.NEEDS_CLARIFICATION
+
+    # Target path specifications (user-facing and resolved canonical)
+    target_directory: Optional[str] = None
+    resolved_target_directory: Optional[str] = None
+    target_name: Optional[str] = None
+    target_path: Optional[str] = None
+    resolved_target_path: Optional[str] = None
+
+    # Optional template
+    template: Optional[ProjectTemplate] = None
+
+    # Clarification questions when important details are missing
+    clarification_questions: list[str] = Field(default_factory=list)
+    clarification_fields_needed: list[str] = Field(default_factory=list)
+    user_provided_answers: dict[str, str] = Field(default_factory=dict)
+
+    # Planned files and content hashes
+    planned_files: list[PlannedFile] = Field(default_factory=list)
+    summary: str = ""
+
+    # Hierarchy and conflict detection
+    needs_parent_creation: bool = False
+    parent_dirs_to_create: list[str] = Field(default_factory=list)
+    conflict_detected: bool = False
+    conflict_message: Optional[str] = None
+
+    # Approval security binding
+    approval_token: Optional[str] = None
+    approved_hash: Optional[str] = None
+    requires_approval: bool = True
+
+    # Timestamps & expiry
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: Optional[datetime] = None
+
+    # Results
+    execution_result: Optional[dict] = None
+    verification_result: Optional[str] = None
+
+
+class CreateFileTaskRequest(BaseModel):
+    """Initial user request to the File Copilot."""
+    request: str
+    context_directory: Optional[str] = None
+
+
+class ClarifyFileTaskRequest(BaseModel):
+    """User response providing clarification answers."""
+    answers: dict[str, str] = Field(default_factory=dict)
+    text: Optional[str] = None
+
+
+class ApproveFileTaskRequest(BaseModel):
+    """Approval or rejection decision for a file task."""
+    approved: bool
+    approval_token: Optional[str] = None

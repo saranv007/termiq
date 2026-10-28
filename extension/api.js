@@ -39,6 +39,8 @@ async function request(path, method = 'GET', body = null) {
     return JSON.parse(text);
 }
 
+// ── System Copilot API ────────────────────────────────────────────────
+
 export function getSystemSummary() {
     return request('/api/v1/system/summary');
 }
@@ -69,4 +71,58 @@ export function verifyPlanAction(planId) {
 
 export function getPlan(planId) {
     return request(`/api/v1/assistant/plan/${planId}`);
+}
+
+// ── File & Folder Copilot API (V2.0) ──────────────────────────────────
+
+export function createFileTask(requestText, contextDirectory = null) {
+    return request('/api/v1/files/task/create', 'POST', {
+        request: requestText,
+        context_directory: contextDirectory,
+    });
+}
+
+export function clarifyFileTask(taskId, answers = {}, text = null) {
+    return request(`/api/v1/files/task/${taskId}/clarify`, 'POST', {
+        answers,
+        text,
+    });
+}
+
+export function getFileTask(taskId) {
+    return request(`/api/v1/files/task/${taskId}`);
+}
+
+export function approveFileTask(taskId, approved, approvalToken = null) {
+    return request(`/api/v1/files/task/${taskId}/approve`, 'POST', {
+        approved,
+        approval_token: approvalToken,
+    });
+}
+
+export function executeFileTask(taskId, approvalToken = null) {
+    return request(`/api/v1/files/task/${taskId}/execute`, 'POST', {
+        approved: true,
+        approval_token: approvalToken,
+    });
+}
+
+export function getFileRoots() {
+    return request('/api/v1/files/roots');
+}
+
+export function listDirectory(path, maxItems = 100) {
+    const encoded = encodeURIComponent(path);
+    return request(`/api/v1/files/list?path=${encoded}&max_items=${maxItems}`);
+}
+
+export function searchFiles(path, pattern, maxItems = 100) {
+    const encPath = encodeURIComponent(path);
+    const encPattern = encodeURIComponent(pattern);
+    return request(`/api/v1/files/search?path=${encPath}&pattern=${encPattern}&max_items=${maxItems}`);
+}
+
+export function readTextFile(path, maxBytes = 65536) {
+    const encoded = encodeURIComponent(path);
+    return request(`/api/v1/files/read?path=${encoded}&max_bytes=${maxBytes}`);
 }
