@@ -1,0 +1,189 @@
+.termiq-popup {
+    min-width: 360px;
+    spacing: 12px;
+    padding: 16px;
+    background-color: #111318;
+    color: #f4f4f5;
+}
+
+.termiq-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.termiq-status {
+    font-size: 12px;
+    color: #a1a1aa;
+}
+
+.termiq-stats {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #20232b;
+    color: #8bdbb5;
+    font-size: 12px;
+}
+
+.termiq-input {
+    min-height: 40px;
+    padding: 8px;
+    border-radius: 8px;
+    background-color: #20232b;
+    color: #ffffff;
+}
+
+.termiq-button {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #6366f1;
+    color: #ffffff;
+    font-weight: bold;
+}
+
+.termiq-answer {
+    min-height: 45px;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #20232b;
+    color: #e4e4e7;
+}
+
+.termiq-plan-box {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #1a1e29;
+    spacing: 8px;
+    margin-top: 6px;
+}
+
+.termiq-plan-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: #60a5fa;
+}
+
+.termiq-plan-desc {
+    font-size: 12px;
+    color: #e2e8f0;
+}
+
+.termiq-plan-badge-safe {
+    font-size: 11px;
+    font-weight: bold;
+    color: #4ade80;
+}
+
+.termiq-plan-badge-warn {
+    font-size: 11px;
+    font-weight: bold;
+    color: #fbbf24;
+}
+
+.termiq-btn-approve {
+    padding: 6px 14px;
+    border-radius: 6px;
+    background-color: #16a34a;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.termiq-btn-reject {
+    padding: 6px 14px;
+    border-radius: 6px;
+    background-color: #dc2626;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.termiq-output-text {
+    font-family: monospace;
+    font-size: 11px;
+    color: #94a3b8;
+    padding: 6px;
+    border-radius: 4px;
+    background-color: #0f172a;
+}
+
+.termiq-verify-success {
+    font-size: 11px;
+    font-weight: bold;
+    color: #22c55e;
+}
+
+.termiq-verify-fail {
+    font-size: 11px;
+    font-weight: bold;
+    color: #ef4444;
+}
+
+/* Mode Selector */
+.termiq-mode-bar {
+    spacing: 6px;
+    padding: 2px;
+    margin-bottom: 4px;
+}
+
+.termiq-mode-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    background-color: #27272a;
+    color: #a1a1aa;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.termiq-mode-btn-active {
+    padding: 6px 12px;
+    border-radius: 6px;
+    background-color: #4f46e5;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* File Copilot Styling */
+.termiq-clarify-box {
+    padding: 8px;
+    border-radius: 6px;
+    background-color: #2d2415;
+    border: 1px solid #78350f;
+    margin-top: 6px;
+    spacing: 6px;
+}
+
+.termiq-clarify-text {
+    font-size: 12px;
+    color: #fef3c7;
+    font-weight: 500;
+}
+
+.termiq-conflict-text {
+    font-size: 11px;
+    color: #f87171;
+    font-weight: bold;
+    padding: 4px 6px;
+    background-color: #450a0a;
+    border-radius: 4px;
+}
+
+.termiq-path-badge {
+    font-family: monospace;
+    font-size: 11px;
+    color: #38bdf8;
+    background-color: #0f172a;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+
+.termiq-file-preview {
+    font-family: monospace;
+    font-size: 10px;
+    color: #cbd5e1;
+    background-color: #090d16;
+    padding: 6px;
+    border-radius: 4px;
+    max-height: 120px;
+}

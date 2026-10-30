@@ -233,13 +233,20 @@ def _parse_suggested_action(ai_text: str) -> Optional[ActionType]:
 
 
 def _clean_ai_text(text: str) -> str:
-    """Remove the suggested-action metadata line from user-visible text."""
+    """Remove the suggested-action metadata line and raw Markdown symbols from user-visible text."""
     cleaned = re.sub(
         r"\n?suggested\s+action:\s*\S+[^\n]*",
         "",
         text,
         flags=re.IGNORECASE,
     )
+    # Strip markdown headers (e.g. ### Header)
+    cleaned = re.sub(r"#{1,6}\s*", "", cleaned)
+    # Strip markdown bold/italics
+    cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"\*([^*]+)\*", r"\1", cleaned)
+    # Strip markdown backticks
+    cleaned = re.sub(r"`([^`]+)`", r"\1", cleaned)
     return cleaned.strip()
 
 
@@ -410,7 +417,7 @@ def _build_plan(
 
 # ── Main entry point ──────────────────────────────────────────────────
 
-def answer_question(question: str) -> dict:
+def answer_question(question: str, mode: str = "beginner") -> dict:
     """
     Answer a user question with live diagnostics, AI analysis, and
     an optional troubleshooting plan.

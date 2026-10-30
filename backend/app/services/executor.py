@@ -52,6 +52,9 @@ COMMAND_ALLOWLIST: dict[ActionType, tuple[str, ...]] = {
     ),
     ActionType.CHECK_NETWORK: ("/usr/bin/ss", "-tulnp"),
     ActionType.CHECK_TEMPERATURE: ("/usr/bin/sensors",),
+    ActionType.CHECK_NETWORK_CONNECTIVITY: ("/usr/bin/ping", "-c", "2", "-W", "2", "1.1.1.1"),
+    ActionType.CHECK_DISK_IO: ("/usr/bin/vmstat", "1", "2"),
+    ActionType.CHECK_BATTERY: ("/usr/bin/cat", "/sys/class/power_supply/BAT0/capacity"),
 }
 
 # ── Restricted environment for child processes ─────────────────────────

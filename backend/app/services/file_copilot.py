@@ -520,6 +520,286 @@ This guide provides an overview of {clean_name.title()}.
                 )
             )
 
+    elif template == ProjectTemplate.FLASK_STARTER:
+        app_py = f'''"""
+{clean_name.title()} Flask Application.
+Built with TERMIQ.
+"""
+
+from flask import Flask, jsonify, render_template
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    """Render home page."""
+    return render_template("index.html", title="{clean_name.title()}")
+
+
+@app.route("/api/health")
+def health():
+    """Health check endpoint."""
+    return jsonify({{"status": "ok", "app": "{clean_name}"}})
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="127.0.0.1", port=5000)
+'''
+        index_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{clean_name.title()}</title>
+    <style>
+        body {{
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            display: grid;
+            place-content: center;
+            height: 100vh;
+            margin: 0;
+        }}
+        .card {{
+            background: #1e293b;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            text-align: center;
+        }}
+        h1 {{ color: #38bdf8; margin-top: 0; }}
+        a {{ color: #38bdf8; text-decoration: none; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>{clean_name.title()}</h1>
+        <p>Flask web application powered by TERMIQ.</p>
+        <p><a href="/api/health">Check API Health</a></p>
+    </div>
+</body>
+</html>
+"""
+        readme_md = f"""# {clean_name.title()}
+
+A lightweight Flask web application built with TERMIQ.
+
+## Features
+- Modular application layout with Jinja2 templates.
+- Health check API endpoint (`/api/health`).
+- Production-ready directory structure.
+
+## Requirements
+- Python 3.8+
+- Flask 3.0+
+
+## Setup & Run
+
+1. Create a virtual environment:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Run the application:
+```bash
+python3 app.py
+```
+Open `http://127.0.0.1:5000` in your browser.
+"""
+        gitignore = """__pycache__/
+*.py[cod]
+.venv/
+venv/
+instance/
+.pytest_cache/
+"""
+        reqs = "flask>=3.0.0\nwerkzeug>=3.0.0\n"
+
+        for rel, content, desc in [
+            ("app.py", app_py, "Flask application entry point"),
+            ("templates/index.html", index_html, "Jinja2 starter template"),
+            ("README.md", readme_md, "Project setup instructions"),
+            (".gitignore", gitignore, "Git ignore rules"),
+            ("requirements.txt", reqs, "Flask dependencies"),
+        ]:
+            files.append(
+                PlannedFile(
+                    relative_path=rel,
+                    content=content,
+                    content_hash=compute_content_hash(content),
+                    size_bytes=len(content.encode("utf-8")),
+                    description=desc,
+                )
+            )
+
+    elif template == ProjectTemplate.FASTAPI_STARTER:
+        main_py = f'''"""
+{clean_name.title()} FastAPI Application.
+Built with TERMIQ.
+"""
+
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="{clean_name.title()}",
+    description="FastAPI service built with TERMIQ",
+    version="1.0.0",
+)
+
+
+@app.get("/")
+def read_root():
+    """Root welcome endpoint."""
+    return {{"message": "Welcome to {clean_name.title()}!"}}
+
+
+@app.get("/health")
+def read_health():
+    """Health check endpoint."""
+    return {{"status": "ok", "app": "{clean_name}"}}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+'''
+        readme_md = f"""# {clean_name.title()}
+
+A modern, high-performance FastAPI service built with TERMIQ.
+
+## Features
+- Fully typed endpoints using FastAPI and Pydantic.
+- Interactive API documentation via Swagger UI (`/docs`) and ReDoc (`/redoc`).
+- Health check endpoint (`/health`).
+
+## Setup & Run
+
+1. Create a virtual environment and install dependencies:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Run the development server:
+```bash
+uvicorn main:app --reload
+```
+Open `http://127.0.0.1:8000/docs` to view the interactive documentation.
+"""
+        gitignore = """__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+"""
+        reqs = "fastapi>=0.110.0\nuvicorn>=0.28.0\n"
+
+        for rel, content, desc in [
+            ("main.py", main_py, "FastAPI application entry point"),
+            ("README.md", readme_md, "FastAPI documentation"),
+            (".gitignore", gitignore, "Git ignore configuration"),
+            ("requirements.txt", reqs, "FastAPI dependencies"),
+        ]:
+            files.append(
+                PlannedFile(
+                    relative_path=rel,
+                    content=content,
+                    content_hash=compute_content_hash(content),
+                    size_bytes=len(content.encode("utf-8")),
+                    description=desc,
+                )
+            )
+
+    elif template == ProjectTemplate.DATA_ANALYSIS:
+        analysis_py = f'''"""
+{clean_name.title()} Data Analysis Script.
+Built with TERMIQ.
+"""
+
+import csv
+import statistics
+from pathlib import Path
+
+
+def summarize_numeric_column(data: list[float]) -> dict[str, float]:
+    """Compute basic descriptive statistics for a list of numbers."""
+    if not data:
+        return {{}}
+    return {{
+        "count": len(data),
+        "mean": round(statistics.mean(data), 2),
+        "median": round(statistics.median(data), 2),
+        "stdev": round(statistics.stdev(data), 2) if len(data) > 1 else 0.0,
+        "min": min(data),
+        "max": max(data),
+    }}
+
+
+def main() -> None:
+    """Run data analysis pipeline."""
+    print("=" * 40)
+    print("TERMIQ Data Analysis Pipeline: {clean_name.title()}")
+    print("=" * 40)
+    data_dir = Path(__file__).parent / "data"
+    print(f"Data directory: {{data_dir}}")
+    print("Ready to process dataset files (CSV, JSON).")
+
+
+if __name__ == "__main__":
+    main()
+'''
+        data_readme = """# Data Directory
+
+Place your raw datasets (CSV, JSON, Parquet) in this folder.
+"""
+        readme_md = f"""# {clean_name.title()}
+
+A data analysis starter project built with TERMIQ.
+
+## Structure
+- `analysis.py`: Main data processing and statistics script.
+- `data/`: Directory for input dataset files.
+- `requirements.txt`: Python data analysis dependencies.
+
+## Usage
+
+Run the analysis script:
+```bash
+python3 analysis.py
+```
+"""
+        gitignore = """__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.csv
+*.parquet
+*.xlsx
+"""
+        reqs = "# Optional dependencies for advanced workflows:\n# pandas>=2.2.0\n# matplotlib>=3.8.0\n"
+
+        for rel, content, desc in [
+            ("analysis.py", analysis_py, "Data analysis processing script"),
+            ("data/README.md", data_readme, "Data folder documentation"),
+            ("README.md", readme_md, "Analysis project documentation"),
+            (".gitignore", gitignore, "Git ignore rules for datasets"),
+            ("requirements.txt", reqs, "Optional data science dependencies"),
+        ]:
+            files.append(
+                PlannedFile(
+                    relative_path=rel,
+                    content=content,
+                    content_hash=compute_content_hash(content),
+                    size_bytes=len(content.encode("utf-8")),
+                    description=desc,
+                )
+            )
+
     return files
 
 
@@ -704,9 +984,25 @@ def parse_file_request(
     # Folder check
     elif any(k in lower for k in ["make a folder", "create a folder", "new folder", "mkdir", "create directory", "make directory"]):
         op = FileOperationType.CREATE_FOLDER
+    # Organize check
+    elif any(k in lower for k in ["organize downloads", "clean up downloads", "organize folder", "clean up folder", "organize my downloads"]):
+        op = FileOperationType.ORGANIZE_FOLDER
+        target_name = "Downloads" if "downloads" in lower else "folder"
+        if "downloads" in lower and not target_dir:
+            target_dir = "Downloads"
+    # Duplicates check
+    elif any(k in lower for k in ["find duplicate", "find duplicates", "duplicate files", "duplicate images"]):
+        op = FileOperationType.FIND_DUPLICATES
+        if not target_dir:
+            target_dir = "Downloads" if "downloads" in lower else "Projects"
+    # Large files check
+    elif any(k in lower for k in ["large files", "big files", "files larger than", "files over"]):
+        op = FileOperationType.FIND_LARGE_FILES
+        if not target_dir:
+            target_dir = "Downloads" if "downloads" in lower else "Projects"
     # Project check
     elif (
-        re.search(r"\b(create|make|build|new|starter)\s+(?:a\s+)?(?:python\s+)?(?:starter\s+)?(?:calculator\s+)?project\b", lower)
+        re.search(r"\b(create|make|build|new|starter)\s+(?:a\s+)?(?:python\s+)?(?:starter\s+)?(?:calculator\s+)?(?:flask\s+)?(?:fastapi\s+)?project\b", lower)
         or re.search(r"\b(create|make|build|new)\s+(?:a\s+)?(?:small\s+)?(?:html|css|js|website)\b", lower)
         or re.search(r"\b(create|make|build|new)\s+(?:a\s+)?(?:docs|documentation)\s+folder\b", lower)
     ) and not re.search(r"\b(create|make|new)\s+(?:a\s+)?(?:python\s+)?(?:text\s+)?file\b", lower):
@@ -715,6 +1011,12 @@ def parse_file_request(
             template = ProjectTemplate.HTML_WEBSITE
         elif any(w in lower for w in ["doc", "docs", "documentation", "markdown"]):
             template = ProjectTemplate.MARKDOWN_DOCS
+        elif "flask" in lower:
+            template = ProjectTemplate.FLASK_STARTER
+        elif "fastapi" in lower:
+            template = ProjectTemplate.FASTAPI_STARTER
+        elif any(w in lower for w in ["data analysis", "data science", "pandas"]):
+            template = ProjectTemplate.DATA_ANALYSIS
         else:
             template = ProjectTemplate.PYTHON_STARTER
     else:

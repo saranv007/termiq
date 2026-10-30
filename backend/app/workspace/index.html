@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERMIQ — Ubuntu AI Copilot Workspace</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-badge">TERMIQ</div>
+            <div>
+                <div class="brand-title">TERMIQ V2.1</div>
+                <div class="brand-sub">Linux Desktop Copilot</div>
+            </div>
+        </div>
+
+        <ul class="nav-list" id="navList">
+            <li class="nav-item active" data-view="home">
+                <span>🏠</span> Home
+            </li>
+            <li class="nav-item" data-view="assistant">
+                <span>🤖</span> AI Assistant
+            </li>
+            <li class="nav-item" data-view="files">
+                <span>📁</span> File Copilot
+            </li>
+            <li class="nav-item" data-view="monitor">
+                <span>📊</span> System Monitor
+            </li>
+            <li class="nav-item" data-view="diagnostics">
+                <span>🩺</span> Diagnostics
+            </li>
+            <li class="nav-item" data-view="developer">
+                <span>💻</span> Developer Tools
+            </li>
+            <li class="nav-item" data-view="builder">
+                <span>🏗️</span> Project Builder
+            </li>
+            <li class="nav-item" data-view="automation">
+                <span>⚡</span> Automation
+            </li>
+            <li class="nav-item" data-view="history">
+                <span>📜</span> Task History
+            </li>
+            <li class="nav-item" data-view="notifications">
+                <span>🔔</span> Notifications <span class="badge" id="navNotifBadge" style="display:none;">0</span>
+            </li>
+            <li class="nav-item" data-view="security">
+                <span>🛡️</span> Security & Logs
+            </li>
+            <li class="nav-item" data-view="settings">
+                <span>⚙️</span> Settings
+            </li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <div>
+                <span class="status-dot" id="backendStatusDot"></span>
+                <span id="backendStatusText">Connected</span>
+            </div>
+            <span style="font-size: 11px; color: var(--text-muted);" id="uptimeMini">--</span>
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+        <!-- Topbar -->
+        <header class="topbar">
+            <div class="topbar-title" id="topbarTitle">Home Overview</div>
+            <div class="topbar-actions">
+                <span class="badge-mode active" id="btnModeBeginner">Beginner</span>
+                <span class="badge-mode" id="btnModeAdvanced">Advanced</span>
+                <button class="btn btn-secondary btn-sm" id="btnRefreshGlobal">🔄 Refresh</button>
+            </div>
+        </header>
+
+        <!-- Dynamic Views -->
+        <div class="views-container">
+            
+            <!-- 1. HOME VIEW -->
+            <section class="view-section active" id="view-home">
+                <div class="grid-cards">
+                    <div class="card">
+                        <div class="card-title">CPU Utilization <span id="homeCpuCores">-- cores</span></div>
+                        <div class="card-value" id="homeCpuVal">--%</div>
+                        <div class="progress-container"><div class="progress-fill" id="homeCpuBar" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">RAM Usage <span id="homeRamTotal">-- GB</span></div>
+                        <div class="card-value" id="homeRamVal">--%</div>
+                        <div class="progress-container"><div class="progress-fill" id="homeRamBar" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Disk Space <span id="homeDiskFree">-- free</span></div>
+                        <div class="card-value" id="homeDiskVal">--%</div>
+                        <div class="progress-container"><div class="progress-fill" id="homeDiskBar" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">System Status</div>
+                        <div class="card-value" style="font-size: 18px; color: var(--success);" id="homeHealthVal">Healthy</div>
+                        <div class="card-subtitle" id="homeUptimeVal">Uptime: Loading...</div>
+                    </div>
+                </div>
+
+                <h3 style="font-size: 15px; margin-bottom: 12px; color: var(--text-secondary);">Quick Actions</h3>
+                <div class="quick-actions-grid">
+                    <div class="action-tile" data-action="qa-file">
+                        <div class="action-tile-icon">📄</div>
+                        <div class="action-tile-title">Create File</div>
+                        <div class="action-tile-desc">Generate or create a new file in Projects</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-folder">
+                        <div class="action-tile-icon">📁</div>
+                        <div class="action-tile-title">Create Folder</div>
+                        <div class="action-tile-desc">Create a new organized directory</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-find">
+                        <div class="action-tile-icon">🔍</div>
+                        <div class="action-tile-title">Find Files</div>
+                        <div class="action-tile-desc">Search files by name or pattern</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-organize">
+                        <div class="action-tile-icon">📦</div>
+                        <div class="action-tile-title">Organize Downloads</div>
+                        <div class="action-tile-desc">Sort files into Documents, Images, Code</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-project">
+                        <div class="action-tile-icon">🏗️</div>
+                        <div class="action-tile-title">Build Python Project</div>
+                        <div class="action-tile-desc">Generate calculator or clean starter app</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-slowdown">
+                        <div class="action-tile-icon">🩺</div>
+                        <div class="action-tile-title">Diagnose Slowdown</div>
+                        <div class="action-tile-desc">Find what is using CPU or memory</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-failed-services">
+                        <div class="action-tile-icon">⚙️</div>
+                        <div class="action-tile-title">Failed Services</div>
+                        <div class="action-tile-desc">Inspect failed systemd units</div>
+                    </div>
+                    <div class="action-tile" data-action="qa-vscode">
+                        <div class="action-tile-icon">💻</div>
+                        <div class="action-tile-title">Open in VS Code</div>
+                        <div class="action-tile-desc">Launch editor in your Projects folder</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-title">Recent System Activity</div>
+                    <div id="homeRecentActivity" style="color: var(--text-secondary); font-size: 13px;">Loading system status...</div>
+                </div>
+            </section>
+
+            <!-- 2. AI ASSISTANT VIEW -->
+            <section class="view-section" id="view-assistant">
+                <div class="chat-container">
+                    <div class="chat-history" id="chatHistory">
+                        <div class="chat-msg ai">
+                            👋 Hello! I am TERMIQ, your AI-powered Ubuntu copilot. Ask me about system performance, errors, file management, or project creation.
+                        </div>
+                    </div>
+                    <div class="chat-input-bar">
+                        <input type="text" class="input-text" id="chatInput" placeholder="Ask a question or request a task... (e.g., Why is my laptop slow? Create calculator in Projects)">
+                        <button class="btn btn-primary" id="btnChatSend">Ask AI</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. FILE COPILOT VIEW -->
+            <section class="view-section" id="view-files">
+                <div style="display: grid; grid-template-columns: 240px 1fr; gap: 20px;">
+                    <div class="card" style="height: fit-content;">
+                        <div class="card-title">Approved Roots</div>
+                        <div id="fileRootsList" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;"></div>
+                        
+                        <div class="card-title" style="margin-top: 16px;">Quick Tools</div>
+                        <button class="btn btn-secondary btn-sm" style="width: 100%; margin-bottom: 6px;" id="btnFileToolDuplicates">🔍 Duplicate Finder</button>
+                        <button class="btn btn-secondary btn-sm" style="width: 100%; margin-bottom: 6px;" id="btnFileToolLarge">🐘 Large File Finder</button>
+                        <button class="btn btn-secondary btn-sm" style="width: 100%;" id="btnFileToolOrganize">📦 Organize Folder</button>
+                    </div>
+
+                    <div>
+                        <div class="card" style="margin-bottom: 16px;">
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" class="input-text" id="fileCurrentPathInput" placeholder="Select or type folder path...">
+                                <button class="btn btn-secondary" id="btnFileListDir">Open Folder</button>
+                                <button class="btn btn-primary" id="btnNewFileModal">+ New File/Folder</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-title" id="fileExplorerTitle">Directory Contents</div>
+                            <div class="table-responsive">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Type</th>
+                                            <th>Size</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="fileExplorerTableBody">
+                                        <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Select a folder above to explore.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- File Content / Editor Preview Card -->
+                        <div class="card" id="fileEditorCard" style="display: none; margin-top: 16px;">
+                            <div class="card-title" style="display: flex; justify-content: space-between;">
+                                <span id="fileEditorName">file.txt</span>
+                                <div>
+                                    <button class="btn btn-secondary btn-sm" id="btnFileEditorClose">Close</button>
+                                    <button class="btn btn-success btn-sm" id="btnFileEditorSave">Save Changes</button>
+                                </div>
+                            </div>
+                            <textarea class="textarea" id="fileEditorContent" style="height: 250px; margin-top: 10px;"></textarea>
+                            <div id="fileEditorDiffPreview" style="margin-top: 10px; display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. SYSTEM MONITOR VIEW -->
+            <section class="view-section" id="view-monitor">
+                <div class="grid-cards">
+                    <div class="card">
+                        <div class="card-title">Memory Breakdown</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);" id="monMemBreakdown">Loading...</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Swap Utilization</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);" id="monSwapBreakdown">Loading...</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Hardware Sensors</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);" id="monTempBreakdown">Loading...</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Battery Status</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);" id="monBatteryBreakdown">Loading...</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-title">Per-Core CPU Utilization</div>
+                    <div id="monCoresGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 10px;"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Top Running Processes</span>
+                        <input type="text" class="input-text" id="procSearchInput" placeholder="Filter processes..." style="width: 200px; padding: 4px 8px; font-size: 12px;">
+                    </div>
+                    <div class="table-responsive" style="max-height: 400px;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>PID</th>
+                                    <th>Name</th>
+                                    <th>CPU %</th>
+                                    <th>RAM %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="procTableBody">
+                                <tr><td colspan="4" style="text-align: center;">Loading processes...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 5. SYSTEM DIAGNOSTICS VIEW -->
+            <section class="view-section" id="view-diagnostics">
+                <div class="grid-cards">
+                    <div class="card" style="cursor: pointer;" id="diagCardSlowdown">
+                        <div class="card-title">🐌 System Slowdown</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);">Analyze CPU throttling, heavy loads, and swap usage.</div>
+                    </div>
+                    <div class="card" style="cursor: pointer;" id="diagCardNetwork">
+                        <div class="card-title">🌐 Network Issues</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);">Test DNS lookups, interfaces, and gateway reachability.</div>
+                    </div>
+                    <div class="card" style="cursor: pointer;" id="diagCardJournal">
+                        <div class="card-title">📋 Journalctl Errors</div>
+                        <div style="font-size: 13px; color: var(--text-secondary);">Extract recent system error logs safely.</div>
+                    </div>
+                </div>
+
+                <div class="card" id="diagResultCard" style="display: none;">
+                    <div class="card-title" id="diagResultTitle">Diagnostic Findings</div>
+                    <div id="diagResultContent" style="font-size: 13.5px; line-height: 1.6; color: var(--text-primary); margin-top: 10px;"></div>
+                </div>
+            </section>
+
+            <!-- 6. DEVELOPER TOOLS VIEW -->
+            <section class="view-section" id="view-developer">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="card">
+                        <div class="card-title">🐍 Python Error Explainer</div>
+                        <div class="form-group">
+                            <label class="form-label">Paste Python Traceback or Error:</label>
+                            <textarea class="textarea" id="devErrorInput" placeholder="e.g. IndexError: list index out of range..."></textarea>
+                        </div>
+                        <button class="btn btn-primary" id="btnDevExplain">Explain Error & Fix</button>
+                        <div id="devErrorResult" style="margin-top: 14px; display: none;"></div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">🛠️ Python Environment & Git</div>
+                        <div class="form-group">
+                            <label class="form-label">Project Directory Path:</label>
+                            <input type="text" class="input-text" id="devProjectPath" placeholder="e.g. Projects/calculator">
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="btn btn-secondary btn-sm" id="btnDevCreateVenv">Create .venv</button>
+                            <button class="btn btn-secondary btn-sm" id="btnDevRunTests">Run Tests</button>
+                            <button class="btn btn-secondary btn-sm" id="btnDevGitStatus">Git Status</button>
+                            <button class="btn btn-primary btn-sm" id="btnDevOpenVSCode">Open in VS Code</button>
+                        </div>
+                        <div id="devToolResult" style="margin-top: 14px; font-size: 13px; color: var(--text-secondary);"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 7. PROJECT BUILDER VIEW -->
+            <section class="view-section" id="view-builder">
+                <div class="card" style="max-width: 700px; margin-bottom: 20px;">
+                    <div class="card-title">Build a New Project</div>
+                    <div class="form-group">
+                        <label class="form-label">Project Template:</label>
+                        <select class="select-input" id="builderTemplateSelect">
+                            <option value="python_starter">Python Starter (CLI Calculator / App + tests)</option>
+                            <option value="flask_starter">Flask Web App (Jinja2 + Health API)</option>
+                            <option value="fastapi_starter">FastAPI Service (Swagger + REST)</option>
+                            <option value="html_website">HTML5, CSS & JavaScript Website</option>
+                            <option value="data_analysis">Python Data Analysis (CSV + Stats)</option>
+                            <option value="markdown_docs">Markdown Documentation Project</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Project Name:</label>
+                        <input type="text" class="input-text" id="builderProjectName" placeholder="e.g., termiq_calculator">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Destination Directory:</label>
+                        <input type="text" class="input-text" id="builderDestination" value="Projects">
+                    </div>
+                    <button class="btn btn-primary" id="btnBuilderGeneratePlan">Preview Project Files</button>
+                </div>
+
+                <div class="card" id="builderPreviewCard" style="display: none;">
+                    <div class="card-title" id="builderPreviewTitle">Planned Project Structure</div>
+                    <div id="builderFileTree" style="margin-bottom: 14px;"></div>
+                    <div id="builderPreviewBox" class="code-preview" style="display: none; margin-bottom: 14px;"></div>
+                    <button class="btn btn-success" id="btnBuilderApproveExecute">Approve & Create Project</button>
+                    <div id="builderResultBox" style="margin-top: 10px; font-weight: 600;"></div>
+                </div>
+            </section>
+
+            <!-- 8. AUTOMATION VIEW -->
+            <section class="view-section" id="view-automation">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-title">Available Automated Workflows</div>
+                    <div id="automationWorkflowCards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 10px;"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Automation Run Log</div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Workflow</th>
+                                    <th>Status</th>
+                                    <th>Run Time</th>
+                                    <th>Summary</th>
+                                </tr>
+                            </thead>
+                            <tbody id="automationHistoryBody">
+                                <tr><td colspan="4" style="text-align: center;">No workflows run yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 9. TASK HISTORY VIEW -->
+            <section class="view-section" id="view-history">
+                <div class="card" style="margin-bottom: 16px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" class="input-text" id="historySearchInput" placeholder="Search tasks..." style="flex-grow: 1;">
+                        <button class="btn btn-secondary btn-sm" id="btnHistoryClear">Clear History</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Task Title</th>
+                                    <th>Status</th>
+                                    <th>Updated</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr><td colspan="5" style="text-align: center;">Loading tasks...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 10. NOTIFICATIONS VIEW -->
+            <section class="view-section" id="view-notifications">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3 style="font-size: 16px;">System & Task Alerts</h3>
+                    <button class="btn btn-secondary btn-sm" id="btnNotifsClearAll">Clear All</button>
+                </div>
+                <div id="notificationsContainer" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="card" style="text-align: center; color: var(--text-muted);">No new notifications.</div>
+                </div>
+            </section>
+
+            <!-- 11. SECURITY & PERMISSIONS VIEW -->
+            <section class="view-section" id="view-security">
+                <div class="grid-cards">
+                    <div class="card">
+                        <div class="card-title">Execution Policy</div>
+                        <div class="badge-pill safe" style="margin-top: 4px;">Approval-Bound</div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Single-use cryptographic tokens. Arbitrary shell execution permanently blocked.</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Path Boundary</div>
+                        <div class="badge-pill info" style="margin-top: 4px;">Approved Roots Only</div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Sensitive directories (.ssh, .env, .config) strictly defended against path traversal and symlinks.</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Immutable Security Audit Trail</div>
+                    <div class="table-responsive" style="max-height: 400px;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Event</th>
+                                    <th>Plan / Task ID</th>
+                                    <th>Detail</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditTableBody">
+                                <tr><td colspan="4" style="text-align: center;">Loading audit trail...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 12. SETTINGS VIEW -->
+            <section class="view-section" id="view-settings">
+                <div class="card" style="max-width: 600px;">
+                    <div class="card-title">Application Preferences</div>
+                    <div class="form-group">
+                        <label class="form-label">Explanation Mode:</label>
+                        <select class="select-input" id="settingModeSelect">
+                            <option value="beginner">Beginner (Clear, concise, minimal jargon)</option>
+                            <option value="advanced">Advanced (Deep technical evidence, logs, AST details)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Monitor Polling Interval (seconds):</label>
+                        <input type="number" class="input-text" id="settingIntervalInput" min="2" max="60" value="5">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Google Gemini Integration:</label>
+                        <div id="settingGeminiStatus" style="font-size: 13px; color: var(--text-secondary);">Checking...</div>
+                    </div>
+                    <button class="btn btn-primary" id="btnSaveSettings">Save Preferences</button>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

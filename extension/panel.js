@@ -15,6 +15,9 @@ import {
     clarifyFileTask,
     approveFileTask,
     executeFileTask,
+    openWorkspace,
+    getNotifications,
+    openInEditor,
 } from './api.js';
 
 function extractAnswer(response) {
@@ -67,15 +70,88 @@ export function createTermiqPanel() {
         return label;
     }
 
+    // ── Open Full Workspace Prominent Button ───────────────────────
+    const wsRow = new PopupMenu.PopupBaseMenuItem({
+        reactive: false,
+        can_focus: false,
+    });
+
+    const openWorkspaceBtn = new St.Button({
+        label: '🚀 Open TERMIQ Workspace',
+        style_class: 'termiq-btn-workspace',
+        can_focus: true,
+        reactive: true,
+        track_hover: true,
+        x_expand: true,
+    });
+
+    wsRow.add_child(openWorkspaceBtn);
+    indicator.menu.addMenuItem(wsRow);
+
     // ── System Monitor Section ─────────────────────────────────────
     const cpuLabel = addStatusRow('CPU: Loading...');
     const memoryLabel = addStatusRow('RAM: Loading...');
     const diskLabel = addStatusRow('Disk: Loading...');
     const connectionLabel = addStatusRow('Backend: Connecting...');
 
+    // Notification alert row (hidden initially)
+    const notifItem = new PopupMenu.PopupBaseMenuItem({
+        reactive: false,
+        can_focus: false,
+    });
+    notifItem.visible = false;
+    const notifLabel = new St.Label({
+        text: '',
+        style_class: 'termiq-notif-alert',
+        x_expand: true,
+    });
+    notifItem.add_child(notifLabel);
+    indicator.menu.addMenuItem(notifItem);
+
     indicator.menu.addMenuItem(
         new PopupMenu.PopupSeparatorMenuItem()
     );
+
+    // ── Quick Action Shortcuts Bar ─────────────────────────────────
+    const qaTitleRow = new PopupMenu.PopupBaseMenuItem({
+        reactive: false,
+        can_focus: false,
+    });
+    const qaTitleLabel = new St.Label({
+        text: 'Quick Actions',
+        style_class: 'termiq-status',
+        style: 'font-weight: bold;',
+    });
+    qaTitleRow.add_child(qaTitleLabel);
+    indicator.menu.addMenuItem(qaTitleRow);
+
+    const qaRow1 = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+    const qaBox1 = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'termiq-quick-actions-box' });
+
+    const btnQaSlowdown = new St.Button({ label: '🐌 Slowdown', style_class: 'termiq-qa-chip', can_focus: true, reactive: true });
+    const btnQaRam = new St.Button({ label: '🧠 RAM Usage', style_class: 'termiq-qa-chip', can_focus: true, reactive: true });
+    const btnQaServices = new St.Button({ label: '⚙️ Services', style_class: 'termiq-qa-chip', can_focus: true, reactive: true });
+
+    qaBox1.add_child(btnQaSlowdown);
+    qaBox1.add_child(btnQaRam);
+    qaBox1.add_child(btnQaServices);
+    qaRow1.add_child(qaBox1);
+    indicator.menu.addMenuItem(qaRow1);
+
+    const qaRow2 = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
+    const qaBox2 = new St.BoxLayout({ vertical: false, x_expand: true, style_class: 'termiq-quick-actions-box' });
+
+    const btnQaCalc = new St.Button({ label: '🏗️ Calculator', style_class: 'termiq-qa-chip', can_focus: true, reactive: true });
+    const btnQaOrganize = new St.Button({ label: '📦 Organize DL', style_class: 'termiq-qa-chip', can_focus: true, reactive: true });
+    const btnQaVsCode = new St.Button({ label: '💻 VS Code', style_class: 'termiq-qa-chip', can_focus: true, reactive: true });
+
+    qaBox2.add_child(btnQaCalc);
+    qaBox2.add_child(btnQaOrganize);
+    qaBox2.add_child(btnQaVsCode);
+    qaRow2.add_child(qaBox2);
+    indicator.menu.addMenuItem(qaRow2);
+
+    indicator.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
     // ── Mode Switcher Row ──────────────────────────────────────────
     const modeRow = new PopupMenu.PopupBaseMenuItem({
@@ -148,7 +224,7 @@ export function createTermiqPanel() {
     questionRow.add_child(questionBox);
     indicator.menu.addMenuItem(questionRow);
 
-    // Diagnostic Evidence item (create first, then hide)
+    // Diagnostic Evidence item
     const evidenceItem = new PopupMenu.PopupBaseMenuItem({
         reactive: false,
         can_focus: false,
@@ -173,7 +249,7 @@ export function createTermiqPanel() {
     });
 
     const answerLabel = new St.Label({
-        text: 'Type a question and press Ask.',
+        text: 'Type a question or pick a quick action above.',
         x_expand: true,
         y_align: Clutter.ActorAlign.CENTER,
     });
@@ -182,7 +258,7 @@ export function createTermiqPanel() {
     answerItem.add_child(answerLabel);
     indicator.menu.addMenuItem(answerItem);
 
-    // System Diagnostic Plan item (create first, then hide)
+    // System Diagnostic Plan item
     const planItem = new PopupMenu.PopupBaseMenuItem({
         reactive: false,
         can_focus: false,
@@ -272,7 +348,7 @@ export function createTermiqPanel() {
     indicator.menu.addMenuItem(planItem);
 
     // ══════════════════════════════════════════════════════════════
-    // FILE & FOLDER COPILOT SECTION (V2.0)
+    // FILE & FOLDER COPILOT SECTION (V2.0 & V2.1)
     // ══════════════════════════════════════════════════════════════
 
     const fileSectionItem = new PopupMenu.PopupBaseMenuItem({
@@ -353,27 +429,13 @@ export function createTermiqPanel() {
     fileClarifyContainer.add_child(fileClarifyAnswerEntry);
     fileClarifyContainer.add_child(fileClarifySubmitBtn);
 
-    // Plan Review & Approval Container
-    const filePlanReviewBox = new St.BoxLayout({
+    // Conflict & Path Container
+    const fileTargetDetailsBox = new St.BoxLayout({
         vertical: true,
         x_expand: true,
-        style_class: 'termiq-plan-box',
+        style: 'spacing: 4px; margin-top: 4px;',
         visible: false,
     });
-
-    const fileSummaryLabel = new St.Label({
-        text: '',
-        style_class: 'termiq-plan-title',
-    });
-    fileSummaryLabel.set_style('max-width: 320px;');
-    fileSummaryLabel.get_clutter_text().set_line_wrap(true);
-
-    const fileDestBadge = new St.Label({
-        text: '',
-        style_class: 'termiq-path-badge',
-    });
-    fileDestBadge.set_style('max-width: 320px;');
-    fileDestBadge.get_clutter_text().set_line_wrap(true);
 
     const fileConflictBanner = new St.Label({
         text: '',
@@ -383,18 +445,54 @@ export function createTermiqPanel() {
     fileConflictBanner.set_style('max-width: 320px;');
     fileConflictBanner.get_clutter_text().set_line_wrap(true);
 
-    const filePreviewSnippet = new St.Label({
+    const filePathBadge = new St.Label({
         text: '',
-        style_class: 'termiq-file-preview',
+        style_class: 'termiq-path-badge',
+    });
+    filePathBadge.set_style('max-width: 320px;');
+    filePathBadge.get_clutter_text().set_line_wrap(true);
+
+    const fileSummaryLabel = new St.Label({
+        text: '',
+        style_class: 'termiq-status',
+    });
+    fileSummaryLabel.set_style('max-width: 320px;');
+    fileSummaryLabel.get_clutter_text().set_line_wrap(true);
+
+    fileTargetDetailsBox.add_child(fileConflictBanner);
+    fileTargetDetailsBox.add_child(filePathBadge);
+    fileTargetDetailsBox.add_child(fileSummaryLabel);
+
+    // File Preview Box
+    const filePreviewBox = new St.BoxLayout({
+        vertical: true,
+        x_expand: true,
+        style: 'spacing: 4px;',
         visible: false,
     });
-    filePreviewSnippet.set_style('max-width: 320px;');
-    filePreviewSnippet.get_clutter_text().set_line_wrap(true);
 
+    const filePreviewHeaderLabel = new St.Label({
+        text: 'File Preview (SHA-256 Protected)',
+        style_class: 'termiq-plan-title',
+        style: 'font-size: 11px;',
+    });
+
+    const filePreviewContentLabel = new St.Label({
+        text: '',
+        style_class: 'termiq-file-preview',
+    });
+    filePreviewContentLabel.set_style('max-width: 320px;');
+    filePreviewContentLabel.get_clutter_text().set_line_wrap(true);
+
+    filePreviewBox.add_child(filePreviewHeaderLabel);
+    filePreviewBox.add_child(filePreviewContentLabel);
+
+    // Approval & Execution Actions
     const fileActionBtnBox = new St.BoxLayout({
         vertical: false,
         x_expand: true,
         style: 'spacing: 8px; margin-top: 6px;',
+        visible: false,
     });
 
     const fileApproveBtn = new St.Button({
@@ -416,6 +514,7 @@ export function createTermiqPanel() {
     fileActionBtnBox.add_child(fileApproveBtn);
     fileActionBtnBox.add_child(fileCancelBtn);
 
+    // Verification & Results
     const fileExecutionProgressLabel = new St.Label({
         text: '',
         style_class: 'termiq-status',
@@ -432,113 +531,177 @@ export function createTermiqPanel() {
     fileVerificationBanner.set_style('max-width: 320px;');
     fileVerificationBanner.get_clutter_text().set_line_wrap(true);
 
-    filePlanReviewBox.add_child(fileSummaryLabel);
-    filePlanReviewBox.add_child(fileDestBadge);
-    filePlanReviewBox.add_child(fileConflictBanner);
-    filePlanReviewBox.add_child(filePreviewSnippet);
-    filePlanReviewBox.add_child(fileActionBtnBox);
-    filePlanReviewBox.add_child(fileExecutionProgressLabel);
-    filePlanReviewBox.add_child(fileVerificationBanner);
-
     fileContainer.add_child(fileHeaderLabel);
     fileContainer.add_child(fileInputBox);
     fileContainer.add_child(fileClarifyContainer);
-    fileContainer.add_child(filePlanReviewBox);
+    fileContainer.add_child(fileTargetDetailsBox);
+    fileContainer.add_child(filePreviewBox);
+    fileContainer.add_child(fileActionBtnBox);
+    fileContainer.add_child(fileExecutionProgressLabel);
+    fileContainer.add_child(fileVerificationBanner);
 
     fileSectionItem.add_child(fileContainer);
     indicator.menu.addMenuItem(fileSectionItem);
 
-    // ── Shared State Tracking ──────────────────────────────────────
-    let activeMode = 'system'; // 'system' or 'file'
+    // ── Recent Task Row ────────────────────────────────────────────
+    const recentTaskRow = addStatusRow('Recent: Ready for requests');
+
+    // ── State Variables ────────────────────────────────────────────
     let currentPlan = null;
     let currentFileTask = null;
+    let timerId = null;
     let isBusy = false;
     let destroyed = false;
-    let timerId = null;
+    let activeMode = 'system'; // 'system' | 'file'
 
-    // ── Mode Switcher Handlers ─────────────────────────────────────
+    // ── Mode Switch Logic ──────────────────────────────────────────
     function setMode(mode) {
-        if (destroyed)
-            return;
-
         activeMode = mode;
-        if (mode === 'system') {
+        if (mode === 'file') {
+            sysModeBtn.style_class = 'termiq-mode-btn';
+            fileModeBtn.style_class = 'termiq-mode-btn-active';
+            sysHeaderLabel.visible = false;
+            questionRow.visible = false;
+            evidenceItem.visible = false;
+            answerItem.visible = false;
+            planItem.visible = false;
+            fileSectionItem.visible = true;
+        } else {
             sysModeBtn.style_class = 'termiq-mode-btn-active';
             fileModeBtn.style_class = 'termiq-mode-btn';
-
-            fileSectionItem.visible = false;
-
             sysHeaderLabel.visible = true;
             questionRow.visible = true;
             answerItem.visible = true;
-            if (evidenceLabel.text)
-                evidenceItem.visible = true;
             if (currentPlan)
                 planItem.visible = true;
-        } else {
-            fileModeBtn.style_class = 'termiq-mode-btn-active';
-            sysModeBtn.style_class = 'termiq-mode-btn';
-
-            sysHeaderLabel.visible = false;
-            questionRow.visible = false;
-            answerItem.visible = false;
-            evidenceItem.visible = false;
-            planItem.visible = false;
-
-            fileSectionItem.visible = true;
+            fileSectionItem.visible = false;
         }
     }
 
     sysModeBtn.connect('clicked', () => setMode('system'));
     fileModeBtn.connect('clicked', () => setMode('file'));
 
-    // ── System Copilot Logic ───────────────────────────────────────
+    // Open Workspace Action
+    openWorkspaceBtn.connect('clicked', () => {
+        indicator.menu.close();
+        openWorkspace();
+    });
+
+    // Quick Action Click Handlers
+    btnQaSlowdown.connect('clicked', () => {
+        setMode('system');
+        questionEntry.set_text('Why is my laptop running slowly?');
+        submitQuestion();
+    });
+
+    btnQaRam.connect('clicked', () => {
+        setMode('system');
+        questionEntry.set_text('Which applications are consuming RAM?');
+        submitQuestion();
+    });
+
+    btnQaServices.connect('clicked', () => {
+        setMode('system');
+        questionEntry.set_text('Show me which services have failed');
+        submitQuestion();
+    });
+
+    btnQaCalc.connect('clicked', () => {
+        setMode('file');
+        fileRequestEntry.set_text('Create a Python calculator project in my Projects folder');
+        handleFilePlan();
+    });
+
+    btnQaOrganize.connect('clicked', () => {
+        setMode('file');
+        fileRequestEntry.set_text('Organize my Downloads folder by file type');
+        handleFilePlan();
+    });
+
+    btnQaVsCode.connect('clicked', () => {
+        openInEditor('Projects').then(res => {
+            recentTaskRow.set_text(`VS Code: ${res.message}`);
+        }).catch(err => {
+            recentTaskRow.set_text(`VS Code error: ${err.message}`);
+        });
+    });
+
+    // ── System Stats Refresh ───────────────────────────────────────
     async function refreshStats() {
         if (destroyed)
             return;
 
         try {
-            const data = await getSystemSummary();
+            const summary = await getSystemSummary();
             if (destroyed)
                 return;
 
-            cpuLabel.set_text(`CPU usage: ${Number(data.cpu.usage_percent).toFixed(1)}%`);
-            memoryLabel.set_text(`RAM: ${Number(data.memory.used_percent).toFixed(1)}% used`);
-            diskLabel.set_text(`Disk: ${Number(data.disk.used_percent).toFixed(1)}% used`);
+            cpuLabel.set_text(
+                `CPU: ${summary.cpu.usage_percent}% ` +
+                `(${summary.cpu.logical_cores} cores)`
+            );
+            memoryLabel.set_text(
+                `RAM: ${summary.memory.used_percent}% ` +
+                `(${summary.memory.available_gb} GB free)`
+            );
+            diskLabel.set_text(
+                `Disk: ${summary.disk.used_percent}% ` +
+                `(${summary.disk.free_gb} GB free)`
+            );
             connectionLabel.set_text('Backend: Connected');
+
+            // Check notifications periodically
+            getNotifications().then(notifData => {
+                if (destroyed) return;
+                const items = notifData.notifications || [];
+                if (items.length > 0) {
+                    notifItem.visible = true;
+                    notifLabel.set_text(`⚠️ Alert: ${items[0].title} — ${items[0].message}`);
+                } else {
+                    notifItem.visible = false;
+                }
+            }).catch(() => {});
+
         } catch (error) {
-            if (!destroyed)
-                connectionLabel.set_text('Backend: Offline');
+            if (destroyed)
+                return;
+            cpuLabel.set_text('CPU: Unavailable');
+            memoryLabel.set_text('RAM: Unavailable');
+            diskLabel.set_text('Disk: Unavailable');
+            connectionLabel.set_text('Backend: Disconnected');
         }
     }
 
+    // ── Question Submission ────────────────────────────────────────
     async function submitQuestion() {
         if (isBusy || destroyed)
             return;
 
         const question = questionEntry.get_text().trim();
-        if (!question) {
-            answerLabel.set_text('Please type a question first.');
+        if (!question)
             return;
-        }
 
         isBusy = true;
         askButton.reactive = false;
-        planItem.visible = false;
+        questionEntry.reactive = false;
+        answerLabel.set_text('Thinking and analyzing system...');
         evidenceItem.visible = false;
+        planItem.visible = false;
         currentPlan = null;
-
-        answerLabel.set_text('TERMIQ is diagnosing your system and consulting AI...');
 
         try {
             const response = await askTermiq(question);
             if (destroyed)
                 return;
 
+            const text = extractAnswer(response);
+            answerLabel.set_text(text);
+            recentTaskRow.set_text(`Recent: ${question.slice(0, 30)}...`);
+
             if (response.findings && response.findings.length > 0) {
                 const issues = response.findings
-                    .filter(f => f.issue)
-                    .map(f => f.issue)
+                    .map(f => f.issue || f.severity || '')
+                    .filter(Boolean)
                     .join('; ');
                 if (issues) {
                     evidenceLabel.set_text(`Evidence: ${issues}`);
@@ -546,49 +709,31 @@ export function createTermiqPanel() {
                 }
             }
 
-            answerLabel.set_text(extractAnswer(response));
-
             if (response.plan && response.plan.proposed_action) {
-                const action = response.plan.proposed_action;
-                currentPlan = {
-                    planId: response.plan.plan_id,
-                    actionId: action.action_id,
-                    actionType: action.action_type,
-                    riskLevel: action.risk_level || 'safe',
-                };
-
-                planTitleLabel.set_text(`Proposed Action: ${action.action_type}`);
-                planDescLabel.set_text(action.description || 'Run system diagnostic');
-
-                const isSafe = action.risk_level === 'safe';
-                planRiskLabel.set_text(`Risk: ${action.risk_level || 'safe'} — Explicit approval required`);
-                planRiskLabel.style_class = isSafe ? 'termiq-plan-badge-safe' : 'termiq-plan-badge-warn';
-
-                buttonBox.visible = true;
-                approveButton.reactive = true;
-                approveButton.visible = true;
-                rejectButton.reactive = true;
-                rejectButton.visible = true;
-
-                executionStatusLabel.set_text('');
+                currentPlan = response.plan;
+                const action = currentPlan.proposed_action;
+                planDescLabel.set_text(action.description);
+                planRiskLabel.set_text(
+                    `Risk: ${action.risk_level.toUpperCase()} (Approval Required)`
+                );
                 executionStatusLabel.visible = false;
-                outputLabel.set_text('');
                 outputLabel.visible = false;
-                verificationLabel.set_text('');
                 verificationLabel.visible = false;
-
+                approveButton.reactive = true;
+                rejectButton.reactive = true;
                 planItem.visible = true;
             }
         } catch (error) {
             if (!destroyed)
-                answerLabel.set_text(`Request failed: ${error.message}`);
+                answerLabel.set_text(`Error: ${error.message}`);
         } finally {
             isBusy = false;
-            if (!destroyed)
-                askButton.reactive = true;
+            askButton.reactive = true;
+            questionEntry.reactive = true;
         }
     }
 
+    // ── System Diagnostic Action Approve/Reject ───────────────────
     async function handleApprove() {
         if (!currentPlan || isBusy || destroyed)
             return;
@@ -597,54 +742,49 @@ export function createTermiqPanel() {
         approveButton.reactive = false;
         rejectButton.reactive = false;
 
-        executionStatusLabel.set_text('1/3 Submitting user approval...');
-        executionStatusLabel.visible = true;
+        const planId = currentPlan.plan_id;
+        const actionId = currentPlan.proposed_action.action_id;
 
         try {
-            const approveResult = await approvePlanAction(currentPlan.planId, currentPlan.actionId, true);
+            executionStatusLabel.set_text('Approving action...');
+            executionStatusLabel.visible = true;
+
+            const approveRes = await approvePlanAction(planId, actionId, true);
             if (destroyed)
                 return;
 
-            if (!approveResult.success) {
-                executionStatusLabel.set_text(`Approval rejected: ${approveResult.message || 'Not approved'}`);
+            if (!approveRes.success) {
+                executionStatusLabel.set_text(`Approval rejected: ${approveRes.message}`);
                 return;
             }
 
-            executionStatusLabel.set_text('2/3 Executing approved diagnostic...');
-            const execResult = await executePlanAction(currentPlan.planId, currentPlan.actionId);
+            executionStatusLabel.set_text('Executing diagnostic...');
+            const execRes = await executePlanAction(planId, actionId);
             if (destroyed)
                 return;
 
-            if (!execResult.success) {
-                executionStatusLabel.set_text(`Execution failed: ${execResult.error || 'Unknown error'}`);
+            if (!execRes.success) {
+                executionStatusLabel.set_text(`Execution failed: ${execRes.error}`);
                 return;
             }
 
-            if (execResult.stdout) {
-                const preview = execResult.stdout.trim().split('\n').slice(0, 6).join('\n');
-                outputLabel.set_text(preview || '(Empty output)');
-                outputLabel.visible = true;
-            } else if (execResult.stderr) {
-                outputLabel.set_text(`stderr: ${execResult.stderr.trim().slice(0, 200)}`);
-                outputLabel.visible = true;
-            }
+            executionStatusLabel.set_text('Execution completed. Verifying...');
+            outputLabel.set_text(execRes.output || '(No output)');
+            outputLabel.visible = true;
 
-            executionStatusLabel.set_text('3/3 Verifying execution result...');
-            const verifyResult = await verifyPlanAction(currentPlan.planId);
+            const verifyRes = await verifyPlanAction(planId);
             if (destroyed)
                 return;
 
-            if (verifyResult.verified) {
-                verificationLabel.set_text(`Result Verified: ${verifyResult.detail}`);
+            if (verifyRes.verified) {
+                verificationLabel.set_text(`✓ Verified: ${verifyRes.message}`);
                 verificationLabel.style_class = 'termiq-verify-success';
-                executionStatusLabel.set_text('Status: Executed and verified');
             } else {
-                verificationLabel.set_text(`Verification notice: ${verifyResult.detail}`);
+                verificationLabel.set_text(`✗ Verification: ${verifyRes.message}`);
                 verificationLabel.style_class = 'termiq-verify-fail';
-                executionStatusLabel.set_text('Status: Completed with verification notice');
             }
             verificationLabel.visible = true;
-            buttonBox.visible = false;
+            executionStatusLabel.set_text('Status: Verified');
         } catch (error) {
             if (!destroyed)
                 executionStatusLabel.set_text(`Error: ${error.message}`);
@@ -662,67 +802,81 @@ export function createTermiqPanel() {
         rejectButton.reactive = false;
 
         try {
-            await approvePlanAction(currentPlan.planId, currentPlan.actionId, false);
+            await approvePlanAction(
+                currentPlan.plan_id,
+                currentPlan.proposed_action.action_id,
+                false
+            );
             if (destroyed)
                 return;
 
             executionStatusLabel.set_text('Action rejected by user.');
             executionStatusLabel.visible = true;
-            buttonBox.visible = false;
+            outputLabel.visible = false;
+            verificationLabel.visible = false;
         } catch (error) {
             if (!destroyed)
-                executionStatusLabel.set_text(`Rejection failed: ${error.message}`);
+                executionStatusLabel.set_text(`Error: ${error.message}`);
         } finally {
             isBusy = false;
         }
     }
 
-    // ── File Copilot Logic (V2.0) ──────────────────────────────────
-    function renderFileTask(task) {
-        if (destroyed || !task)
-            return;
-
+    // ── File Copilot Plan & Execution Logic ────────────────────────
+    function renderFileTaskUI(task) {
         currentFileTask = task;
 
-        // Reset display widgets
         fileClarifyContainer.visible = false;
-        filePlanReviewBox.visible = false;
+        fileTargetDetailsBox.visible = false;
         fileConflictBanner.visible = false;
-        filePreviewSnippet.visible = false;
+        filePreviewBox.visible = false;
+        fileActionBtnBox.visible = false;
         fileExecutionProgressLabel.visible = false;
         fileVerificationBanner.visible = false;
 
-        // 1. Needs clarification state
-        if (task.status === 'needs_clarification' && task.clarification_questions.length > 0) {
-            fileClarifyQuestionLabel.set_text(task.clarification_questions.join('\n'));
+        // Needs Clarification
+        if (task.status === 'needs_clarification') {
+            const q = task.clarification_questions.length > 0
+                ? task.clarification_questions[0]
+                : 'Please specify the missing filename or destination.';
+            fileClarifyQuestionLabel.set_text(q);
             fileClarifyAnswerEntry.set_text('');
             fileClarifyContainer.visible = true;
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                if (!destroyed)
+                    global.stage.set_key_focus(fileClarifyAnswerEntry);
+                return GLib.SOURCE_REMOVE;
+            });
             return;
         }
 
-        // 2. Ready for review / awaiting approval
-        if (task.status === 'awaiting_approval' || task.status === 'ready_for_review') {
-            fileSummaryLabel.set_text(task.summary || `Task: ${task.operation}`);
-            fileDestBadge.set_text(task.resolved_target_path || task.target_path || 'Destination pending');
+        // Conflict check
+        if (task.conflict_detected) {
+            fileConflictBanner.set_text(`⚠️ Conflict: ${task.conflict_message || 'Target already exists.'}`);
+            fileConflictBanner.visible = true;
+            fileTargetDetailsBox.visible = true;
+            return;
+        }
 
-            if (task.conflict_detected) {
-                fileConflictBanner.set_text(`⚠ Conflict: ${task.conflict_message || 'Target already exists.'}`);
-                fileConflictBanner.visible = true;
-                fileActionBtnBox.visible = false;
-            } else {
-                fileActionBtnBox.visible = true;
-                fileApproveBtn.reactive = true;
-                fileCancelBtn.reactive = true;
-            }
+        // Ready for review / Awaiting approval
+        if (task.status === 'awaiting_approval' || task.status === 'ready_for_review') {
+            fileTargetDetailsBox.visible = true;
+            filePathBadge.set_text(`Target: ${task.target_path || task.target_name}`);
+            fileSummaryLabel.set_text(task.summary || 'Review planned file operations before approval.');
 
             if (task.planned_files && task.planned_files.length > 0) {
-                const first = task.planned_files[0];
-                const snippet = first.content.split('\n').slice(0, 5).join('\n');
-                filePreviewSnippet.set_text(`Preview (${first.relative_path}):\n${snippet}`);
-                filePreviewSnippet.visible = true;
+                const sample = task.planned_files[0];
+                const previewSnippet = sample.content.length > 300
+                    ? sample.content.slice(0, 300) + '\n... [Remaining content verified]'
+                    : sample.content;
+                filePreviewHeaderLabel.set_text(`Preview: ${sample.relative_path} (${sample.size_bytes}B)`);
+                filePreviewContentLabel.set_text(previewSnippet);
+                filePreviewBox.visible = true;
             }
 
-            filePlanReviewBox.visible = true;
+            fileApproveBtn.reactive = true;
+            fileCancelBtn.reactive = true;
+            fileActionBtnBox.visible = true;
         }
     }
 
@@ -730,28 +884,30 @@ export function createTermiqPanel() {
         if (isBusy || destroyed)
             return;
 
-        const requestText = fileRequestEntry.get_text().trim();
-        if (!requestText) {
-            fileSummaryLabel.set_text('Please describe a file or folder task first.');
-            filePlanReviewBox.visible = true;
+        const reqText = fileRequestEntry.get_text().trim();
+        if (!reqText)
             return;
-        }
 
         isBusy = true;
         filePlanButton.reactive = false;
+        fileRequestEntry.reactive = false;
 
         try {
-            const task = await createFileTask(requestText);
-            renderFileTask(task);
+            const task = await createFileTask(reqText);
+            if (destroyed)
+                return;
+            renderFileTaskUI(task);
+            recentTaskRow.set_text(`File Plan: ${task.target_name || task.operation}`);
         } catch (error) {
             if (!destroyed) {
-                fileSummaryLabel.set_text(`Request failed: ${error.message}`);
-                filePlanReviewBox.visible = true;
+                fileConflictBanner.set_text(`Error planning request: ${error.message}`);
+                fileConflictBanner.visible = true;
+                fileTargetDetailsBox.visible = true;
             }
         } finally {
             isBusy = false;
-            if (!destroyed)
-                filePlanButton.reactive = true;
+            filePlanButton.reactive = true;
+            fileRequestEntry.reactive = true;
         }
     }
 
@@ -759,28 +915,29 @@ export function createTermiqPanel() {
         if (!currentFileTask || isBusy || destroyed)
             return;
 
-        const answerText = fileClarifyAnswerEntry.get_text().trim();
-        if (!answerText)
+        const answer = fileClarifyAnswerEntry.get_text().trim();
+        if (!answer)
             return;
 
         isBusy = true;
         fileClarifySubmitBtn.reactive = false;
 
-        try {
-            const field = (currentFileTask.clarification_fields_needed && currentFileTask.clarification_fields_needed[0]) || 'answer';
-            const answers = {};
-            answers[field] = answerText;
+        const fieldKey = (currentFileTask.clarification_fields_needed && currentFileTask.clarification_fields_needed.length > 0)
+            ? currentFileTask.clarification_fields_needed[0]
+            : 'answer';
 
-            const res = await clarifyFileTask(currentFileTask.task_id, answers, answerText);
-            if (res.task)
-                renderFileTask(res.task);
+        try {
+            const res = await clarifyFileTask(currentFileTask.task_id, { [fieldKey]: answer }, answer);
+            if (destroyed)
+                return;
+            renderFileTaskUI(res.task);
         } catch (error) {
-            if (!destroyed)
-                fileClarifyQuestionLabel.set_text(`Clarification error: ${error.message}`);
+            if (!destroyed) {
+                fileClarifyQuestionLabel.set_text(`Error submitting answer: ${error.message}`);
+            }
         } finally {
             isBusy = false;
-            if (!destroyed)
-                fileClarifySubmitBtn.reactive = true;
+            fileClarifySubmitBtn.reactive = true;
         }
     }
 
@@ -792,10 +949,10 @@ export function createTermiqPanel() {
         fileApproveBtn.reactive = false;
         fileCancelBtn.reactive = false;
 
-        fileExecutionProgressLabel.set_text('1/2 Approving task with server...');
-        fileExecutionProgressLabel.visible = true;
-
         try {
+            fileExecutionProgressLabel.set_text('1/2 Approving file plan...');
+            fileExecutionProgressLabel.visible = true;
+
             const appRes = await approveFileTask(currentFileTask.task_id, true, currentFileTask.approval_token);
             if (destroyed)
                 return;
@@ -819,6 +976,7 @@ export function createTermiqPanel() {
             fileVerificationBanner.visible = true;
             fileExecutionProgressLabel.set_text('Status: Completed & verified');
             fileActionBtnBox.visible = false;
+            recentTaskRow.set_text(`Verified: ${execRes.task.target_name}`);
         } catch (error) {
             if (!destroyed)
                 fileExecutionProgressLabel.set_text(`Execution error: ${error.message}`);
@@ -843,6 +1001,7 @@ export function createTermiqPanel() {
             fileExecutionProgressLabel.set_text('Operation cancelled.');
             fileExecutionProgressLabel.visible = true;
             fileActionBtnBox.visible = false;
+            recentTaskRow.set_text('File operation cancelled.');
         } catch (error) {
             if (!destroyed)
                 fileExecutionProgressLabel.set_text(`Cancel failed: ${error.message}`);

@@ -1,5 +1,6 @@
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 
 const API_BASE = 'http://127.0.0.1:8765';
 const session = new Soup.Session();
@@ -45,8 +46,8 @@ export function getSystemSummary() {
     return request('/api/v1/system/summary');
 }
 
-export function askTermiq(question) {
-    return request('/api/v1/assistant/ask', 'POST', {question});
+export function askTermiq(question, mode = 'beginner') {
+    return request('/api/v1/assistant/ask', 'POST', { question, mode });
 }
 
 export function approvePlanAction(planId, actionId, approved) {
@@ -73,7 +74,7 @@ export function getPlan(planId) {
     return request(`/api/v1/assistant/plan/${planId}`);
 }
 
-// ── File & Folder Copilot API (V2.0) ──────────────────────────────────
+// ── File & Folder Copilot API (V2.0 & V2.1) ───────────────────────────
 
 export function createFileTask(requestText, contextDirectory = null) {
     return request('/api/v1/files/task/create', 'POST', {
@@ -125,4 +126,24 @@ export function searchFiles(path, pattern, maxItems = 100) {
 export function readTextFile(path, maxBytes = 65536) {
     const encoded = encodeURIComponent(path);
     return request(`/api/v1/files/read?path=${encoded}&max_bytes=${maxBytes}`);
+}
+
+// ── Notifications & Desktop Workspace Launching ───────────────────────
+
+export function getNotifications() {
+    return request('/api/v1/notifications?unread_only=true');
+}
+
+export function openInEditor(targetPath, editor = 'code') {
+    return request('/api/v1/dev/open-editor', 'POST', { target_path: targetPath, editor });
+}
+
+export function openWorkspace() {
+    try {
+        Gio.AppInfo.launch_default_for_uri('http://127.0.0.1:8765/workspace/', null);
+        return true;
+    } catch (err) {
+        log(`TERMIQ: Failed to launch workspace URI: ${err.message}`);
+        return false;
+    }
 }
